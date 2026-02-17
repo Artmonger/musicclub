@@ -236,7 +236,7 @@ export default function ProjectPage() {
         ) : (
           tracks.filter((t) => t?.id).map((track) => {
             const streamPath = track.storage_path ?? (track as { file_path?: string }).file_path ?? '';
-            const displayName = track.name ?? (track as { title?: string }).title ?? 'Track';
+            const displayName = track.title ?? (track as { name?: string }).name ?? 'Track';
             return (
             <li
               key={track.id}
