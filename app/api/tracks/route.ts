@@ -1,6 +1,47 @@
 import { NextResponse } from 'next/server';
 import { createServerSupabase } from '@/lib/supabase-server';
 
+const BUCKET = 'music-files';
+
+function fileTypeFromPath(path: string): 'mp3' | 'wav' | 'm4a' {
+  const ext = path.split('.').pop()?.toLowerCase() ?? '';
+  if (ext === 'wav') return 'wav';
+  if (ext === 'm4a') return 'm4a';
+  return 'mp3';
+}
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json().catch(() => ({}));
+    const { projectId, title, file_path } = body;
+    if (!projectId || typeof projectId !== 'string') {
+      return NextResponse.json({ error: 'projectId is required' }, { status: 400 });
+    }
+    if (!file_path || typeof file_path !== 'string') {
+      return NextResponse.json({ error: 'file_path is required' }, { status: 400 });
+    }
+    const name = (title && typeof title === 'string' && title.trim()) ? title.trim() : 'Untitled';
+    const file_type = fileTypeFromPath(file_path);
+    const supabase = createServerSupabase();
+    const { data: track, error } = await supabase
+      .from('tracks')
+      .insert({ project_id: projectId, name, storage_path: file_path, file_type })
+      .select()
+      .single();
+    if (error) {
+      console.error('Tracks POST:', error.message);
+      return NextResponse.json({ error: error.message || 'Failed to create track' }, { status: 500 });
+    }
+    return NextResponse.json({ track });
+  } catch (err) {
+    console.error('Tracks POST:', err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'Failed to create track' },
+      { status: 500 }
+    );
+  }
+}
+
 export async function PATCH(request: Request) {
   try {
     const body = await request.json();
@@ -50,7 +91,7 @@ export async function DELETE(request: Request) {
       .single();
 
     if (track?.storage_path) {
-      await supabase.storage.from('Music Files').remove([track.storage_path]);
+      await supabase.storage.from(BUCKET).remove([track.storage_path]);
     }
 
     const { error } = await supabase.from('tracks').delete().eq('id', id);

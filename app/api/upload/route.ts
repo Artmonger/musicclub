@@ -40,7 +40,7 @@ export async function POST(request: Request) {
 
     const supabase = createServerSupabase();
     const { error: uploadError } = await supabase.storage
-      .from('Music Files')
+      .from('music-files')
       .upload(storagePath, file, {
         contentType: mime,
         upsert: false,
@@ -60,7 +60,7 @@ export async function POST(request: Request) {
       .single();
 
     if (insertError) {
-      await supabase.storage.from('Music Files').remove([storagePath]);
+      await supabase.storage.from('music-files').remove([storagePath]);
       throw insertError;
     }
 
