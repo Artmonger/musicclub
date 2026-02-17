@@ -10,7 +10,17 @@ export async function GET(
 ) {
   try {
     const { id: projectId } = await params;
-    const supabase = createServerSupabase();
+    let supabase;
+    try {
+      supabase = createServerSupabase();
+    } catch (envErr) {
+      const msg = envErr instanceof Error ? envErr.message : 'Supabase client failed';
+      console.error('Tracks GET (env):', msg);
+      return NextResponse.json(
+        { error: msg + '. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in Vercel.' },
+        { status: 503 }
+      );
+    }
     const { data, error } = await supabase
       .from('tracks')
       .select('*')

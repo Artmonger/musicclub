@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { AudioPlayer } from '@/components/AudioPlayer';
@@ -10,27 +10,42 @@ import type { Track } from '@/types/database';
 export default function ProjectPage() {
   const params = useParams();
   const id = params.id as string;
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [project, setProject] = useState<Project | null>(null);
   const [tracks, setTracks] = useState<Track[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [editingTrack, setEditingTrack] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchProject = useCallback(async () => {
     const res = await fetch(`/api/projects/${id}`, { cache: 'no-store' });
-    if (res.ok) setProject(await res.json());
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      setProject(data);
+      setError(null);
+    } else {
+      setProject(null);
+      setError((data.error as string) || res.statusText || 'Failed to load project');
+    }
   }, [id]);
 
   const fetchTracks = useCallback(async () => {
     const res = await fetch(`/api/projects/${id}/tracks?t=${Date.now()}`, { cache: 'no-store' });
+    const data = await res.json().catch(() => ({}));
     if (res.ok) {
-      const list = await res.json();
-      setTracks(Array.isArray(list) ? list : []);
+      const list = Array.isArray(data) ? data : [];
+      setTracks(list);
+      setError(null);
+    } else {
+      setTracks([]);
+      setError((data.error as string) || res.statusText || 'Failed to load tracks');
     }
   }, [id]);
 
   const loadFromBackend = useCallback(() => {
     setLoading(true);
+    setError(null);
     setTracks([]);
     Promise.all([fetchProject(), fetchTracks()]).finally(() => setLoading(false));
   }, [fetchProject, fetchTracks]);
@@ -45,23 +60,35 @@ export default function ProjectPage() {
     return () => window.removeEventListener('focus', onFocus);
   }, [loadFromBackend]);
 
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files?.length) return;
-    setUploading(true);
-    try {
-      for (const file of Array.from(files)) {
-        const form = new FormData();
-        form.set('file', file);
-        form.set('projectId', id);
-        const res = await fetch('/api/upload', { method: 'POST', body: form, cache: 'no-store' });
-        if (res.ok) await fetchTracks();
+  const handleUpload = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const input = e.target;
+      const fileList = input.files ? Array.from(input.files) : [];
+      input.value = '';
+      if (!fileList.length) return;
+
+      const projectId = id;
+      setError(null);
+      setUploading(true);
+      try {
+        for (const file of fileList) {
+          const form = new FormData();
+          form.set('file', file);
+          form.set('projectId', projectId);
+          const res = await fetch('/api/upload', { method: 'POST', body: form, cache: 'no-store' });
+          const data = await res.json().catch(() => ({}));
+          if (res.ok) {
+            await fetchTracks();
+          } else {
+            setError((data.error as string) || res.statusText || 'Upload failed');
+          }
+        }
+      } finally {
+        setUploading(false);
       }
-    } finally {
-      setUploading(false);
-      e.target.value = '';
-    }
-  };
+    },
+    [id, fetchTracks]
+  );
 
   const updateTrack = async (trackId: string, data: { bpm?: number; key?: string; notes?: string; name?: string }) => {
     const res = await fetch('/api/tracks', {
@@ -82,10 +109,28 @@ export default function ProjectPage() {
     if (res.ok) await fetchTracks();
   };
 
-  if (loading || !project) {
+  if (loading && !project && !error) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-12">
         <p className="text-[var(--muted)]">Loading…</p>
+      </div>
+    );
+  }
+
+  if (!project) {
+    return (
+      <div className="mx-auto max-w-2xl px-4 py-12">
+        <p className="text-red-400">{error || 'Project not found'}</p>
+        <button
+          type="button"
+          onClick={() => loadFromBackend()}
+          className="mt-4 rounded border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-sm hover:underline"
+        >
+          Refresh from backend
+        </button>
+        <Link href="/" className="ml-3 text-sm text-[var(--muted)] hover:underline">
+          ← Projects
+        </Link>
       </div>
     );
   }
@@ -112,18 +157,38 @@ export default function ProjectPage() {
         </button>
       </div>
 
+      {error && (
+        <div className="mt-4 rounded border border-amber-500/50 bg-amber-500/10 px-4 py-2 text-sm text-amber-600 dark:text-amber-400">
+          {error}
+          <button
+            type="button"
+            onClick={() => loadFromBackend()}
+            className="ml-2 font-medium hover:underline"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       <div className="mt-8">
-        <label className="inline-block cursor-pointer rounded border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm transition hover:bg-[var(--border)]">
-          <input
-            type="file"
-            accept=".mp3,.wav,.m4a,audio/mpeg,audio/wav,audio/mp4"
-            multiple
-            className="hidden"
-            onChange={handleUpload}
-            disabled={uploading}
-          />
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".mp3,.wav,.m4a,audio/mpeg,audio/wav,audio/mp4"
+          multiple
+          className="hidden"
+          onChange={handleUpload}
+          disabled={uploading}
+          aria-hidden
+        />
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={uploading}
+          className="rounded border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm transition hover:bg-[var(--border)] disabled:opacity-50"
+        >
           {uploading ? 'Uploading…' : 'Upload audio (mp3, wav, m4a)'}
-        </label>
+        </button>
       </div>
 
       <ul className="mt-8 space-y-4">
