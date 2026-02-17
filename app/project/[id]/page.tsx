@@ -315,6 +315,7 @@ export default function ProjectPage() {
           tracks.filter((t) => t?.id).map((track) => {
             const streamPath = track.file_path ?? (track as { storage_path?: string }).storage_path ?? '';
             const displayName = track.title ?? (track as { name?: string }).name ?? 'Track';
+            const hasValidPath = streamPath.includes('/') && streamPath.length > 2;
             return (
             <li
               key={track.id}
@@ -360,13 +361,15 @@ export default function ProjectPage() {
                 </button>
               </div>
 
-              {streamPath ? (
+              {hasValidPath ? (
                 <AudioPlayer
                   streamUrlApi={`/api/stream?path=${encodeURIComponent(streamPath)}`}
                   trackName={displayName}
                 />
               ) : (
-                <p className="text-sm text-amber-500">File path missing for this track.</p>
+                <p className="text-sm text-amber-500">
+                  {streamPath ? 'File path invalid (expected projectId/filename).' : 'File path missing for this track.'}
+                </p>
               )}
 
               <div className="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">

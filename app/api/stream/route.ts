@@ -19,6 +19,14 @@ export async function GET(request: Request) {
         { status: 400 }
       );
     }
+    // Storage path must be "projectId/filename.ext" – not just project id
+    if (!path.includes('/')) {
+      console.error('Stream: invalid path (expected projectId/filename)', path);
+      return NextResponse.json(
+        { error: 'Invalid path: expected projectId/filename.ext' },
+        { status: 400 }
+      );
+    }
 
     let supabase;
     try {
