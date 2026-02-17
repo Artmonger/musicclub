@@ -13,7 +13,14 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id: projectId } = await params;
+    const resolved = await params;
+    const projectId = (resolved?.id ?? '').trim();
+    if (!projectId) {
+      return NextResponse.json(
+        { error: 'Project id is required' },
+        { status: 400 }
+      );
+    }
     let supabase;
     try {
       supabase = createServerSupabase();
@@ -38,23 +45,29 @@ export async function GET(
 
     if (error) throw error;
     const rows = (data ?? []) as Record<string, unknown>[];
-    console.log('[tracks GET] projectId=%s count=%s tableTotal=%s', projectId, rows.length, tableCount ?? '?');
+    const tableTotal = tableCount ?? 0;
+    console.log('[tracks GET] projectId=%s count=%s tableTotal=%s', projectId, rows.length, tableTotal);
+    if (rows.length === 0 && tableTotal > 0) {
+      console.warn('[tracks GET] no rows for this project but table has rows — check project_id match. Hit /api/debug/tracks-all to list all.');
+    }
     const normalized = rows.map((row) => ({
       ...row,
       name: row.title ?? row.name,
       storage_path: row.file_path ?? row.storage_path,
       file_path: row.file_path ?? row.storage_path,
     }));
-    return NextResponse.json(normalized, {
-      headers: {
-        'Cache-Control': 'no-store, no-cache, max-age=0, must-revalidate',
-        Pragma: 'no-cache',
-        Expires: '0',
-        'X-Track-Count': String(normalized.length),
-        'X-Project-Id': projectId,
-        'X-Tracks-Table-Total': String(tableCount ?? ''),
-      },
-    });
+    const headers: Record<string, string> = {
+      'Cache-Control': 'no-store, no-cache, max-age=0, must-revalidate',
+      Pragma: 'no-cache',
+      Expires: '0',
+      'X-Track-Count': String(normalized.length),
+      'X-Project-Id': projectId,
+      'X-Tracks-Table-Total': String(tableTotal),
+    };
+    if (normalized.length === 0 && tableTotal > 0) {
+      headers['X-Debug'] = 'no-tracks-for-this-project; see /api/debug/tracks-all';
+    }
+    return NextResponse.json(normalized, { headers });
   } catch (err) {
     console.error('Tracks GET:', err);
     return NextResponse.json(

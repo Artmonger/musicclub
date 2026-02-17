@@ -78,7 +78,13 @@ export default function ProjectPage() {
     setTracks([]);
     setError(null);
     setLoading(true);
-    Promise.all([fetchProject(), fetchTracks()]).finally(() => setLoading(false));
+    Promise.all([fetchProject(), fetchTracks()])
+      .then(([, list]) => {
+        if (list.length === 0) {
+          setTimeout(() => fetchTracks(), 2000);
+        }
+      })
+      .finally(() => setLoading(false));
   }, [fetchProject, fetchTracks]);
 
   useEffect(() => {
@@ -581,7 +587,8 @@ export default function ProjectPage() {
             {tracks.length === 0 && isDev && (
               <li className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-left text-sm text-amber-700 dark:text-amber-300">
                 <strong className="block mb-2">Tracks disappear after refresh?</strong>
-                <a href="/api/debug/tracks-total" target="_blank" rel="noopener noreferrer" className="underline">Check /api/debug/tracks-total</a> and Vercel env (SUPABASE_URL, SUPABASE_SECRET_KEY).
+                <p className="mb-2">Check: <a href="/api/debug/tracks-total" target="_blank" rel="noopener noreferrer" className="underline">tracks-total</a> (total in DB), <a href="/api/debug/tracks-all" target="_blank" rel="noopener noreferrer" className="underline">tracks-all</a> (all rows + project_id). If tracks-all shows rows with a different <code>project_id</code> than your URL, the app may be writing to the wrong project.</p>
+                <p>Vercel env: SUPABASE_URL and SUPABASE_SECRET_KEY must match the Supabase project where you see the data.</p>
               </li>
             )}
           </>
