@@ -34,6 +34,8 @@ Private single-user music project management: projects, audio uploads (mp3, wav,
 2. Add env vars: `SUPABASE_URL`, `SUPABASE_SECRET_KEY` (same names as in Vercel Environment Variables).
 3. Deploy.
 
+**Live app:** https://musicclub-rr8x.vercel.app
+
 Note: Vercel serverless request body limit is 4.5 MB (Hobby) or 5 MB (Pro). For larger uploads, use Supabase client upload with signed upload URLs issued by your API, or another upload path.
 
 ## API (all server-side; call from your app only)

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createServerSupabase } from '@/lib/supabase-server';
+import { createServerSupabase, getSupabaseSafeInfo } from '@/lib/supabase-server';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -14,8 +14,7 @@ export async function GET(
 ) {
   try {
     const projectId = (params?.id ?? '').trim();
-    // Temporary logging: params and projectId for audit (same projectId used in uploads).
-    console.log('[tracks GET] params=%j projectId=%s', params, projectId);
+    const safe = getSupabaseSafeInfo();
     if (!projectId) {
       return NextResponse.json(
         { error: 'Project id is required' },
@@ -34,6 +33,11 @@ export async function GET(
       );
     }
 
+    const { count: tracksTotal } = await supabase
+      .from('tracks')
+      .select('*', { count: 'exact', head: true });
+    const tableTotal = tracksTotal ?? 0;
+
     const { data, error } = await supabase
       .from('tracks')
       .select('*')
@@ -42,6 +46,19 @@ export async function GET(
 
     if (error) throw error;
     const rows = (data ?? []) as Record<string, unknown>[];
+
+    console.log('[tracks GET] projectId=%s tracksTotal=%s supabaseUrlHost=%s filteredCount=%s', projectId, tableTotal, safe.host, rows.length);
+
+    if (tableTotal > 0 && rows.length === 0) {
+      const { data: latestRows } = await supabase
+        .from('tracks')
+        .select('id, project_id, title, created_at')
+        .order('created_at', { ascending: false })
+        .limit(5);
+      const projectIds = (latestRows ?? []).map((r: { project_id?: string }) => r?.project_id);
+      console.warn('[tracks GET] tracksTotal>0 but filtered=0 — sample project_ids in DB:', projectIds);
+    }
+
     const normalized = rows.map((row) => ({
       ...row,
       name: row.title ?? row.name,
@@ -54,6 +71,8 @@ export async function GET(
       Expires: '0',
       'X-Project-Id': projectId,
       'X-Track-Count': String(normalized.length),
+      'X-Tracks-Table-Total': String(tableTotal),
+      'X-Supabase-Host': safe.host ?? '',
     };
     return NextResponse.json(normalized, { headers });
   } catch (err) {

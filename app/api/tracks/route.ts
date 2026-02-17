@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createServerSupabase } from '@/lib/supabase-server';
+import { createServerSupabase, getSupabaseSafeInfo } from '@/lib/supabase-server';
 
 const BUCKET = 'music-files';
 
@@ -35,7 +35,14 @@ export async function POST(request: Request) {
       console.error('Tracks POST:', error.message);
       return NextResponse.json({ error: error.message || 'Failed to create track' }, { status: 500 });
     }
-    return NextResponse.json({ track });
+
+    const { count: tracksTotal, error: countErr } = await supabase
+      .from('tracks')
+      .select('*', { count: 'exact', head: true });
+    const total = countErr ? null : (tracksTotal ?? 0);
+    const safe = getSupabaseSafeInfo();
+    console.log('[tracks POST] insert ok projectId=%s trackId=%s tracksTotal=%s supabaseHost=%s', projectId, track?.id, total, safe.host);
+    return NextResponse.json({ track, tracksTotal: total });
   } catch (err) {
     console.error('Tracks POST:', err);
     return NextResponse.json(
