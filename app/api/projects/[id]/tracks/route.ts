@@ -45,6 +45,7 @@ export async function GET(
         'Cache-Control': 'no-store, no-cache, max-age=0, must-revalidate',
         Pragma: 'no-cache',
         Expires: '0',
+        'X-Track-Count': String(normalized.length),
       },
     });
   } catch (err) {

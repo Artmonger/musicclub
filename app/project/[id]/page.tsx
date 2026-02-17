@@ -33,7 +33,11 @@ export default function ProjectPage() {
   }, [id]);
 
   const fetchTracks = useCallback(async () => {
-    const res = await fetch(`/api/projects/${id}/tracks?t=${Date.now()}`, { cache: 'no-store' });
+    const url = `/api/projects/${id}/tracks?t=${Date.now()}`;
+    const res = await fetch(url, {
+      cache: 'no-store',
+      headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
+    });
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
       const list = Array.isArray(data) ? data : [];
@@ -268,6 +272,10 @@ export default function ProjectPage() {
           Hard Refresh from Supabase
         </button>
       </div>
+
+      <p className="mt-2 text-xs text-[var(--muted)]" aria-live="polite">
+        Tracks from API: {tracks.length} — if this doesn’t match Supabase, check Vercel env (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY).
+      </p>
 
       {error && (
         <div className="mt-4 rounded border border-amber-500/50 bg-amber-500/10 px-4 py-2 text-sm text-amber-600 dark:text-amber-400">
