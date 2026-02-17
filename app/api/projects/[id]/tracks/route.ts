@@ -4,6 +4,10 @@ import { createServerSupabase } from '@/lib/supabase-server';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+/**
+ * Single source of truth for track list. Supabase DB only; no static/cache.
+ * GET /api/projects/[projectId]/tracks
+ */
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -22,7 +26,6 @@ export async function GET(
       );
     }
 
-    // Read tracks directly from DB; we already insert only after successful upload.
     const { data, error } = await supabase
       .from('tracks')
       .select('*')
@@ -41,6 +44,7 @@ export async function GET(
       headers: {
         'Cache-Control': 'no-store, no-cache, max-age=0, must-revalidate',
         Pragma: 'no-cache',
+        Expires: '0',
       },
     });
   } catch (err) {

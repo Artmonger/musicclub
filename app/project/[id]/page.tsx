@@ -7,6 +7,7 @@ import { AudioPlayer } from '@/components/AudioPlayer';
 import type { Project } from '@/types/database';
 import type { Track } from '@/types/database';
 
+/** Single source of truth: tracks only from GET /api/projects/[id]/tracks (Supabase). No localStorage or other persistence. */
 export default function ProjectPage() {
   const params = useParams();
   const id = params.id as string;
@@ -44,10 +45,11 @@ export default function ProjectPage() {
     }
   }, [id]);
 
+  /** Hard refresh: clear in-memory state and re-fetch project + tracks from Supabase only. */
   const loadFromBackend = useCallback(() => {
-    setLoading(true);
-    setError(null);
     setTracks([]);
+    setError(null);
+    setLoading(true);
     Promise.all([fetchProject(), fetchTracks()]).finally(() => setLoading(false));
   }, [fetchProject, fetchTracks]);
 
@@ -236,7 +238,7 @@ export default function ProjectPage() {
           onClick={() => loadFromBackend()}
           className="mt-4 rounded border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-sm hover:underline"
         >
-          Refresh from backend
+          Hard Refresh from Supabase
         </button>
         <Link href="/" className="ml-3 text-sm text-[var(--muted)] hover:underline">
           ← Projects
@@ -261,9 +263,9 @@ export default function ProjectPage() {
           type="button"
           onClick={() => loadFromBackend()}
           className="shrink-0 rounded border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-sm text-[var(--muted)] hover:underline"
-          title="Reload project and tracks from Supabase"
+          title="Clear in-memory state and re-fetch project + tracks from Supabase only (no cache)"
         >
-          Refresh from backend
+          Hard Refresh from Supabase
         </button>
       </div>
 
@@ -306,7 +308,7 @@ export default function ProjectPage() {
         )}
       </div>
 
-      <ul className="mt-8 space-y-4">
+      <ul className="mt-8 space-y-4" data-source="supabase" data-track-count={tracks.filter((t) => t?.id).length}>
         {tracks.filter((t) => t?.id).length === 0 ? (
           <li className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-6 text-center text-sm text-[var(--muted)]">
             No tracks. Upload audio above.
