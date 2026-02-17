@@ -53,13 +53,13 @@ export async function GET(
         ? rows
         : rows.filter((row) => {
             const path = (row.file_path ?? row.storage_path) as string | undefined;
-            if (!path || path.trim() === '') return true;
-            return existingStoragePaths!.has(path);
+            return path && path.trim() !== '' && existingStoragePaths!.has(path);
           });
     const normalized = withFile.map((row) => ({
       ...row,
       name: row.title ?? row.name,
       storage_path: row.file_path ?? row.storage_path,
+      file_path: row.file_path ?? row.storage_path,
     }));
     return NextResponse.json(normalized, {
       headers: {

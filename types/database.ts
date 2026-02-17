@@ -37,7 +37,7 @@ export interface Database {
           id: string;
           project_id: string;
           title: string;
-          storage_path: string | null;
+          file_path: string | null;
           bpm: number | null;
           key: string | null;
           notes: string | null;
@@ -48,7 +48,7 @@ export interface Database {
           id?: string;
           project_id: string;
           title: string;
-          storage_path?: string | null;
+          file_path?: string | null;
           bpm?: number | null;
           key?: string | null;
           notes?: string | null;
@@ -59,7 +59,7 @@ export interface Database {
           id?: string;
           project_id?: string;
           title?: string;
-          storage_path?: string;
+          file_path?: string;
           bpm?: number | null;
           key?: string | null;
           notes?: string | null;

@@ -37,28 +37,38 @@ export async function POST(request: Request) {
     const path = `${projectId}/${Date.now()}-${sanitize(base)}.${ext}`;
 
     const supabase = createServerSupabase();
+    console.log('[uploads/create] start', {
+      projectId,
+      filename,
+      contentType: ct,
+      path,
+    });
     const { data, error } = await supabase.storage
       .from(BUCKET)
       .createSignedUploadUrl(path, { upsert: false });
 
     if (error) {
-      console.error('[uploads/create]', error.message);
+      console.error('[uploads/create] error', error.message);
       return NextResponse.json({ error: error.message || 'Failed to create upload URL' }, { status: 502 });
     }
 
     const signedUrl = data?.signedUrl ?? (data as { signed_url?: string })?.signed_url;
     const token = data?.token;
     if (!signedUrl || !token) {
+      console.error('[uploads/create] invalid response', data);
       return NextResponse.json({ error: 'Invalid response from storage' }, { status: 502 });
     }
 
-    return NextResponse.json({
+    const response = {
       path: data?.path ?? path,
       signedUrl,
       token,
-    });
+    };
+    console.log('[uploads/create] success', { projectId, filename, path: response.path });
+
+    return NextResponse.json(response);
   } catch (err) {
-    console.error('[uploads/create]', err);
+    console.error('[uploads/create] unexpected', err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Upload create failed' },
       { status: 500 }

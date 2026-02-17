@@ -15,7 +15,7 @@ export default function ProjectPage() {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
-  const [addingTrack, setAddingTrack] = useState(false);
+  const [uploadStage, setUploadStage] = useState<string | null>(null);
   const [editingTrack, setEditingTrack] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -78,46 +78,127 @@ export default function ProjectPage() {
       const projectId = id;
       setError(null);
       setUploading(true);
+
       try {
         for (const file of fileList) {
-          const form = new FormData();
-          form.set('file', file);
-          form.set('projectId', projectId);
-          const res = await fetch('/api/upload', { method: 'POST', body: form, cache: 'no-store' });
-          const data = await res.json().catch(() => ({}));
-          if (res.ok) {
+          try {
+            // Stage 1: requesting_url
+            setUploadStage(`requesting_url: ${file.name}`);
+            console.log('[upload] requesting_url', { projectId, name: file.name, size: file.size, type: file.type });
+
+            const createRes = await fetch('/api/uploads/create', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                projectId,
+                filename: file.name,
+                contentType: file.type || 'application/octet-stream',
+              }),
+              cache: 'no-store',
+            });
+            const createData = await createRes.json().catch(() => ({}));
+            if (!createRes.ok) {
+              console.error('[upload] /api/uploads/create failed', createRes.status, createData);
+              throw new Error((createData.error as string) || 'Failed to create upload URL');
+            }
+
+            const { path, signedUrl } = createData as { path: string; signedUrl: string };
+            if (!path || !signedUrl) {
+              console.error('[upload] invalid create response', createData);
+              throw new Error('Invalid upload URL from server');
+            }
+
+            // Stage 2: uploading
+            setUploadStage(`uploading: ${file.name}`);
+            console.log('[upload] uploading to storage', { projectId, path, size: file.size, type: file.type });
+
+            const uploadRes = await fetch(signedUrl, {
+              method: 'PUT',
+              headers: {
+                'Content-Type': file.type || 'application/octet-stream',
+              },
+              body: file,
+            });
+
+            if (!uploadRes.ok) {
+              console.error('[upload] signed upload failed', uploadRes.status, await uploadRes.text().catch(() => ''));
+
+              // Fallback: small files only via API route (Vercel body limits)
+              if (file.size <= 4.5 * 1024 * 1024) {
+                console.log('[upload] fallback to /api/upload for small file', {
+                  projectId,
+                  name: file.name,
+                  size: file.size,
+                });
+                const form = new FormData();
+                form.set('file', file);
+                form.set('projectId', projectId);
+                const fallbackRes = await fetch('/api/upload', {
+                  method: 'POST',
+                  body: form,
+                  cache: 'no-store',
+                });
+                const fallbackData = await fallbackRes.json().catch(() => ({}));
+                if (!fallbackRes.ok) {
+                  console.error('[upload] /api/upload fallback failed', fallbackRes.status, fallbackData);
+                  throw new Error(
+                    (fallbackData.error as string) ||
+                      `Upload failed (fallback). Try a smaller file or check server logs.`
+                  );
+                }
+
+                // Fallback path: the API already created the track + storage object.
+                setUploadStage(`saving: ${file.name}`);
+                await fetchTracks();
+                setUploadStage(`done: ${file.name}`);
+                continue;
+              }
+
+              throw new Error(
+                'Upload failed. File may be too large or the signed URL is invalid. Try a smaller file or check logs.'
+              );
+            }
+
+            // Stage 3: saving (DB row)
+            setUploadStage(`saving: ${file.name}`);
+            console.log('[upload] saving track row', { projectId, path });
+
+            const saveRes = await fetch('/api/tracks', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                projectId,
+                title: file.name.replace(/\.[^.]+$/, ''),
+                file_path: path,
+              }),
+              cache: 'no-store',
+            });
+            const saveData = await saveRes.json().catch(() => ({}));
+            if (!saveRes.ok) {
+              console.error('[upload] /api/tracks failed', saveRes.status, saveData);
+              throw new Error((saveData.error as string) || 'Failed to save track metadata');
+            }
+
+            // Stage 4: done
+            setUploadStage(`done: ${file.name}`);
             await fetchTracks();
-          } else {
-            setError((data.error as string) || res.statusText || 'Upload failed');
+          } catch (fileErr) {
+            console.error('[upload] file failed', file.name, fileErr);
+            setError(
+              fileErr instanceof Error
+                ? fileErr.message
+                : 'Upload failed. See console for details.'
+            );
+            break; // stop processing remaining files on first failure
           }
         }
       } finally {
         setUploading(false);
+        setUploadStage(null);
       }
     },
     [id, fetchTracks]
   );
-
-  const addTrackWithoutFile = useCallback(async () => {
-    setError(null);
-    setAddingTrack(true);
-    try {
-      const res = await fetch('/api/tracks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId: id, name: 'Untitled' }),
-        cache: 'no-store',
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        await fetchTracks();
-      } else {
-        setError((data.error as string) || res.statusText || 'Failed to add track');
-      }
-    } finally {
-      setAddingTrack(false);
-    }
-  }, [id, fetchTracks]);
 
   const updateTrack = async (trackId: string, data: { bpm?: number; key?: string; notes?: string; name?: string }) => {
     const res = await fetch('/api/tracks', {
@@ -199,7 +280,7 @@ export default function ProjectPage() {
         </div>
       )}
 
-      <div className="mt-8 flex flex-wrap gap-2">
+      <div className="mt-8 flex flex-wrap items-center gap-3">
         <input
           ref={fileInputRef}
           type="file"
@@ -218,14 +299,11 @@ export default function ProjectPage() {
         >
           {uploading ? 'Uploading…' : 'Upload audio (mp3, wav, m4a)'}
         </button>
-        <button
-          type="button"
-          onClick={addTrackWithoutFile}
-          disabled={addingTrack}
-          className="rounded border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm transition hover:bg-[var(--border)] disabled:opacity-50"
-        >
-          {addingTrack ? 'Adding…' : 'Add track (no file)'}
-        </button>
+        {uploadStage && (
+          <span className="text-xs text-[var(--muted)]">
+            Stage: {uploadStage}
+          </span>
+        )}
       </div>
 
       <ul className="mt-8 space-y-4">

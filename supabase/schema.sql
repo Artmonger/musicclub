@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS tracks (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   title TEXT NOT NULL,
-  storage_path TEXT UNIQUE,
+  file_path TEXT UNIQUE,
   bpm INTEGER,
   key TEXT,
   notes TEXT,

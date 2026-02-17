@@ -10,6 +10,9 @@ export async function POST(request: Request) {
     if (!projectId || typeof projectId !== 'string') {
       return NextResponse.json({ error: 'projectId is required' }, { status: 400 });
     }
+    if (!file_path || typeof file_path !== 'string') {
+      return NextResponse.json({ error: 'file_path is required' }, { status: 400 });
+    }
     const titleVal = [nameParam, title].find((n) => typeof n === 'string' && n.trim())?.trim() || 'Untitled';
 
     let supabase;
@@ -23,31 +26,14 @@ export async function POST(request: Request) {
       );
     }
 
-    if (file_path && typeof file_path === 'string') {
-      const { data: track, error } = await supabase
-        .from('tracks')
-        .insert({ project_id: projectId, title: titleVal, storage_path: file_path })
-        .select()
-        .single();
-      if (error) {
-        console.error('Tracks POST:', error.message);
-        return NextResponse.json({ error: error.message || 'Failed to create track' }, { status: 500 });
-      }
-      return NextResponse.json({ track });
-    }
-
-    // Create track without a file (manual "Add track")
     const { data: track, error } = await supabase
       .from('tracks')
-      .insert({ project_id: projectId, title: titleVal, storage_path: null })
+      .insert({ project_id: projectId, title: titleVal, file_path })
       .select()
       .single();
     if (error) {
-      console.error('Tracks POST (no file):', error.message);
-      return NextResponse.json(
-        { error: error.message || 'Failed to create track. You may need to run: ALTER TABLE tracks ALTER COLUMN storage_path DROP NOT NULL;' },
-        { status: 500 }
-      );
+      console.error('Tracks POST:', error.message);
+      return NextResponse.json({ error: error.message || 'Failed to create track' }, { status: 500 });
     }
     return NextResponse.json({ track });
   } catch (err) {
@@ -103,12 +89,12 @@ export async function DELETE(request: Request) {
     const supabase = createServerSupabase();
     const { data: track } = await supabase
       .from('tracks')
-      .select('storage_path')
+      .select('file_path')
       .eq('id', id)
       .single();
 
-    if (track?.storage_path) {
-      await supabase.storage.from(BUCKET).remove([track.storage_path]);
+    if (track?.file_path) {
+      await supabase.storage.from(BUCKET).remove([track.file_path]);
     }
 
     const { error } = await supabase.from('tracks').delete().eq('id', id);
