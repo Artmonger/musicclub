@@ -3,7 +3,7 @@
 import { useRef, useState, useEffect } from 'react';
 
 interface AudioPlayerProps {
-  /** API path to get a signed stream URL, e.g. `/api/stream?path=...` */
+  /** Only URL the browser should request: /api/stream?path=<storagePath>. Server redirects to signed Supabase URL. */
   streamUrlApi: string;
   trackName: string;
   onEnded?: () => void;
@@ -12,35 +12,15 @@ interface AudioPlayerProps {
 
 export function AudioPlayer({ streamUrlApi, trackName, onEnded, className = '' }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
-  const [src, setSrc] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [playing, setPlaying] = useState(false);
 
-  const loadUrl = async () => {
-    if (!streamUrlApi) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(streamUrlApi);
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || 'Failed to load audio');
-      }
-      const { url } = await res.json();
-      setSrc(url);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    if (streamUrlApi) loadUrl();
-    return () => setSrc(null);
+    setError(null);
+    setLoading(true);
   }, [streamUrlApi]);
 
   const audio = audioRef.current;
@@ -83,21 +63,13 @@ export function AudioPlayer({ streamUrlApi, trackName, onEnded, className = '' }
     audio.currentTime = x * duration;
   };
 
-  if (loading) {
-    return (
-      <div className={`rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4 ${className}`}>
-        <p className="text-sm text-[var(--muted)]">Loading…</p>
-      </div>
-    );
-  }
-
   if (error) {
     return (
       <div className={`rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4 ${className}`}>
         <p className="text-sm text-red-400">{error}</p>
         <button
           type="button"
-          onClick={loadUrl}
+          onClick={() => { setError(null); setLoading(true); }}
           className="mt-2 text-sm text-[var(--accent)] hover:underline"
         >
           Retry
@@ -108,9 +80,21 @@ export function AudioPlayer({ streamUrlApi, trackName, onEnded, className = '' }
 
   return (
     <div className={`rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4 ${className}`}>
-      {src && (
-        <audio ref={audioRef} src={src} preload="metadata" />
+      {streamUrlApi && (
+        <audio
+          ref={audioRef}
+          src={streamUrlApi}
+          preload="metadata"
+          onLoadStart={() => setLoading(true)}
+          onCanPlay={() => setLoading(false)}
+          onLoadedData={() => setLoading(false)}
+          onError={() => {
+            setLoading(false);
+            setError('Failed to load audio');
+          }}
+        />
       )}
+      {loading && <p className="text-sm text-[var(--muted)]">Loading…</p>}
       <p className="mb-2 truncate text-sm font-medium">{trackName}</p>
       <div className="flex items-center gap-3">
         <button
