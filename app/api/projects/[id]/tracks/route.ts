@@ -21,6 +21,7 @@ export async function GET(
         { status: 503 }
       );
     }
+    // Always read current state from Supabase so UI matches backend (e.g. after deleting in dashboard)
     const { data, error } = await supabase
       .from('tracks')
       .select('*')
@@ -35,7 +36,10 @@ export async function GET(
       storage_path: row.file_path ?? row.storage_path,
     }));
     return NextResponse.json(normalized, {
-      headers: { 'Cache-Control': 'no-store, max-age=0' },
+      headers: {
+        'Cache-Control': 'no-store, no-cache, max-age=0, must-revalidate',
+        Pragma: 'no-cache',
+      },
     });
   } catch (err) {
     console.error('Tracks GET:', err);

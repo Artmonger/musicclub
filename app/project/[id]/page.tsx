@@ -56,8 +56,15 @@ export default function ProjectPage() {
 
   useEffect(() => {
     const onFocus = () => loadFromBackend();
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') loadFromBackend();
+    };
     window.addEventListener('focus', onFocus);
-    return () => window.removeEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [loadFromBackend]);
 
   const handleUpload = useCallback(
