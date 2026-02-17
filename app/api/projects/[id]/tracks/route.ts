@@ -6,15 +6,16 @@ export const runtime = 'nodejs';
 
 /**
  * Single source of truth for track list. Supabase DB only; no static/cache.
- * GET /api/projects/[projectId]/tracks — always queries Supabase; never cached.
+ * GET /api/projects/[id]/tracks — param key is "id" (matches folder [id]); always queries Supabase; never cached.
  */
 export async function GET(
   _request: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: { id: string } }
 ) {
   try {
-    const resolved = await params;
-    const projectId = (resolved?.id ?? '').trim();
+    const projectId = (params?.id ?? '').trim();
+    // Temporary logging: params and projectId for audit (same projectId used in uploads).
+    console.log('[tracks GET] params=%j projectId=%s', params, projectId);
     if (!projectId) {
       return NextResponse.json(
         { error: 'Project id is required' },
@@ -33,10 +34,6 @@ export async function GET(
       );
     }
 
-    // Diagnostic: can we see any rows at all? (unfiltered count)
-    const { count: tableCount } = await supabase
-      .from('tracks')
-      .select('*', { count: 'exact', head: true });
     const { data, error } = await supabase
       .from('tracks')
       .select('*')
@@ -45,11 +42,6 @@ export async function GET(
 
     if (error) throw error;
     const rows = (data ?? []) as Record<string, unknown>[];
-    const tableTotal = tableCount ?? 0;
-    console.log('[tracks GET] projectId=%s count=%s tableTotal=%s', projectId, rows.length, tableTotal);
-    if (rows.length === 0 && tableTotal > 0) {
-      console.warn('[tracks GET] no rows for this project but table has rows — check project_id match. Hit /api/debug/tracks-all to list all.');
-    }
     const normalized = rows.map((row) => ({
       ...row,
       name: row.title ?? row.name,
@@ -60,13 +52,9 @@ export async function GET(
       'Cache-Control': 'no-store, no-cache, max-age=0, must-revalidate',
       Pragma: 'no-cache',
       Expires: '0',
-      'X-Track-Count': String(normalized.length),
       'X-Project-Id': projectId,
-      'X-Tracks-Table-Total': String(tableTotal),
+      'X-Track-Count': String(normalized.length),
     };
-    if (normalized.length === 0 && tableTotal > 0) {
-      headers['X-Debug'] = 'no-tracks-for-this-project; see /api/debug/tracks-all';
-    }
     return NextResponse.json(normalized, { headers });
   } catch (err) {
     console.error('Tracks GET:', err);
