@@ -17,18 +17,33 @@ export default function ProjectPage() {
   const [editingTrack, setEditingTrack] = useState<string | null>(null);
 
   const fetchProject = useCallback(async () => {
-    const res = await fetch(`/api/projects/${id}`);
+    const res = await fetch(`/api/projects/${id}`, { cache: 'no-store' });
     if (res.ok) setProject(await res.json());
   }, [id]);
 
   const fetchTracks = useCallback(async () => {
-    const res = await fetch(`/api/projects/${id}/tracks`);
-    if (res.ok) setTracks(await res.json());
+    const res = await fetch(`/api/projects/${id}/tracks?t=${Date.now()}`, { cache: 'no-store' });
+    if (res.ok) {
+      const list = await res.json();
+      setTracks(Array.isArray(list) ? list : []);
+    }
   }, [id]);
 
-  useEffect(() => {
+  const loadFromBackend = useCallback(() => {
+    setLoading(true);
+    setTracks([]);
     Promise.all([fetchProject(), fetchTracks()]).finally(() => setLoading(false));
   }, [fetchProject, fetchTracks]);
+
+  useEffect(() => {
+    loadFromBackend();
+  }, [id, loadFromBackend]);
+
+  useEffect(() => {
+    const onFocus = () => loadFromBackend();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [loadFromBackend]);
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -39,7 +54,7 @@ export default function ProjectPage() {
         const form = new FormData();
         form.set('file', file);
         form.set('projectId', id);
-        const res = await fetch('/api/upload', { method: 'POST', body: form });
+        const res = await fetch('/api/upload', { method: 'POST', body: form, cache: 'no-store' });
         if (res.ok) await fetchTracks();
       }
     } finally {
@@ -53,19 +68,18 @@ export default function ProjectPage() {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: trackId, ...data }),
+      cache: 'no-store',
     });
     if (res.ok) {
-      setTracks((prev) =>
-        prev.map((t) => (t.id === trackId ? { ...t, ...data } : t))
-      );
+      await fetchTracks();
       setEditingTrack(null);
     }
   };
 
   const deleteTrack = async (trackId: string) => {
     if (!confirm('Delete this track?')) return;
-    const res = await fetch(`/api/tracks?id=${trackId}`, { method: 'DELETE' });
-    if (res.ok) setTracks((prev) => prev.filter((t) => t.id !== trackId));
+    const res = await fetch(`/api/tracks?id=${trackId}`, { method: 'DELETE', cache: 'no-store' });
+    if (res.ok) await fetchTracks();
   };
 
   if (loading || !project) {
@@ -81,10 +95,21 @@ export default function ProjectPage() {
       <Link href="/" className="text-sm text-[var(--muted)] hover:underline">
         ← Projects
       </Link>
-      <h1 className="mt-4 text-2xl font-semibold tracking-tight">{project.name}</h1>
-      {project.description && (
-        <p className="mt-1 text-sm text-[var(--muted)]">{project.description}</p>
-      )}
+      <div className="mt-4 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">{project.name}</h1>
+          {project.description && (
+            <p className="mt-1 text-sm text-[var(--muted)]">{project.description}</p>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => loadFromBackend()}
+          className="shrink-0 text-sm text-[var(--muted)] hover:underline"
+        >
+          Refresh from backend
+        </button>
+      </div>
 
       <div className="mt-8">
         <label className="inline-block cursor-pointer rounded border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm transition hover:bg-[var(--border)]">
@@ -101,12 +126,12 @@ export default function ProjectPage() {
       </div>
 
       <ul className="mt-8 space-y-4">
-        {tracks.length === 0 ? (
+        {tracks.filter((t) => t?.id).length === 0 ? (
           <li className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-6 text-center text-sm text-[var(--muted)]">
             No tracks. Upload audio above.
           </li>
         ) : (
-          tracks.map((track) => (
+          tracks.filter((t) => t?.id).map((track) => (
             <li
               key={track.id}
               className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4"
