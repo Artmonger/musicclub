@@ -34,7 +34,9 @@ export async function GET(
         (item: { name?: string }) => typeof item.name === 'string' && !item.name.startsWith('.')
       );
       existingStoragePaths = new Set(
-        fileNames.map((item: { name: string }) => `${projectId}/${item.name}`)
+        fileNames.map((item: { name: string }) =>
+          item.name.includes('/') ? item.name : `${projectId}/${item.name}`
+        )
       );
     }
 
