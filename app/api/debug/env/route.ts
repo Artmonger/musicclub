@@ -1,34 +1,20 @@
 import { NextResponse } from 'next/server';
+import { getSupabaseHost } from '@/lib/supabase-server';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 export async function GET() {
-  // Expose ONLY non-secret env so we can verify which Supabase project the server uses
-  const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? null;
-  let supabaseHost: string | null = null;
-  if (supabaseUrl) {
-    try {
-      supabaseHost = new URL(supabaseUrl).hostname;
-    } catch {
-      supabaseHost = null;
-    }
-  }
-
+  const supabaseHost = getSupabaseHost();
+  const supabaseUrl = process.env.SUPABASE_URL;
   return NextResponse.json(
     {
       supabaseHost,
-      supabaseUrlPrefix: supabaseUrl ? `${supabaseUrl.slice(0, 40)}…` : null,
-      hasSupabaseUrl: Boolean(process.env.SUPABASE_URL),
+      hasSupabaseUrl: Boolean(supabaseUrl),
       hasSupabaseSecretKey: Boolean(process.env.SUPABASE_SECRET_KEY),
-      hasNextPublicSupabaseUrl: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
-      
+      note: 'Server routes use only SUPABASE_URL + SUPABASE_SECRET_KEY (no NEXT_PUBLIC fallback).',
     },
-    {
-      headers: {
-        'Cache-Control': 'no-store, max-age=0',
-      },
-    }
+    { headers: { 'Cache-Control': 'no-store, max-age=0' } }
   );
 }
 

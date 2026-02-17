@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createServerSupabase } from '@/lib/supabase-server';
+import { createServerSupabase, getSupabaseHost } from '@/lib/supabase-server';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -53,6 +53,7 @@ export async function GET(
       Expires: '0',
       'X-Project-Id': projectId,
       'X-Track-Count': String(normalized.length),
+      'X-Supabase-Host': getSupabaseHost() ?? '',
     };
     return NextResponse.json(normalized, { headers });
   } catch (err) {

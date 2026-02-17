@@ -1,35 +1,42 @@
 import { createClient } from '@supabase/supabase-js';
 
 /**
- * Single Supabase client for all server routes. Uses only:
- * - process.env.SUPABASE_URL (fallback: NEXT_PUBLIC_SUPABASE_URL)
+ * Single Supabase client for all server routes. Uses ONLY:
+ * - process.env.SUPABASE_URL (no NEXT_PUBLIC fallback — avoids split-brain across envs)
  * - process.env.SUPABASE_SECRET_KEY
- * No SUPABASE_SERVICE_ROLE_KEY or anon keys — ensure reads/writes hit the same project.
  */
-const getSupabaseUrl = () =>
-  process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
+function getSupabaseUrl(): string {
+  const url = process.env.SUPABASE_URL;
+  if (!url || typeof url !== 'string' || !url.trim()) {
+    throw new Error('Missing SUPABASE_URL. Set it in Vercel env (and .env.local for dev). Do not use NEXT_PUBLIC_SUPABASE_URL for server routes.');
+  }
+  return url.trim();
+}
 
-const getSupabaseServiceKey = () =>
+const getSupabaseServiceKey = (): string | undefined =>
   process.env.SUPABASE_SECRET_KEY;
+
+/** Safe hostname only (for logging/headers). Uses only SUPABASE_URL. Returns null if not set. */
+export function getSupabaseHost(): string | null {
+  const url = process.env.SUPABASE_URL;
+  if (!url || typeof url !== 'string') return null;
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return null;
+  }
+}
+
 export function supabaseServer() {
   const url = getSupabaseUrl();
   const key = getSupabaseServiceKey();
-
-  // Temporary diagnostic: confirm env presence without logging secrets.
-  // Remove or comment out once verified in Vercel logs.
-  // eslint-disable-next-line no-console
-  console.log('[supabaseServer] env check', {
-    hasUrl: Boolean(url),
-    hasSecretKey: Boolean(key),
-  });
-
-  if (!url || !key) {
-    throw new Error(
-      'Missing SUPABASE_URL and SUPABASE_SECRET_KEY'
-    );
+  if (!key || typeof key !== 'string' || !key.trim()) {
+    throw new Error('Missing SUPABASE_SECRET_KEY. Set it in Vercel env (and .env.local for dev).');
   }
-
-  return createClient(url, key, {
+  const host = getSupabaseHost();
+  // eslint-disable-next-line no-console
+  console.log('[supabaseServer] using host=%s', host ?? '(unknown)');
+  return createClient(url, key.trim(), {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 }
@@ -41,16 +48,7 @@ export function createServerSupabase() {
   return supabaseServer();
 }
 
-/** Safe Supabase env info for logging/headers only. Never returns secret key value. */
+/** Safe Supabase env info for logging/headers only. Uses only SUPABASE_URL (no NEXT_PUBLIC). Never returns secret key value. */
 export function getSupabaseSafeInfo(): { host: string | null; hasSecretKey: boolean } {
-  let host: string | null = null;
-  const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? null;
-  if (url) {
-    try {
-      host = new URL(url).hostname;
-    } catch {
-      host = null;
-    }
-  }
-  return { host, hasSecretKey: Boolean(process.env.SUPABASE_SECRET_KEY) };
+  return { host: getSupabaseHost(), hasSecretKey: Boolean(process.env.SUPABASE_SECRET_KEY?.trim()) };
 }
