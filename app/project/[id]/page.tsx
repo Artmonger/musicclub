@@ -15,6 +15,7 @@ export default function ProjectPage() {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [addingTrack, setAddingTrack] = useState(false);
   const [editingTrack, setEditingTrack] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -97,6 +98,27 @@ export default function ProjectPage() {
     [id, fetchTracks]
   );
 
+  const addTrackWithoutFile = useCallback(async () => {
+    setError(null);
+    setAddingTrack(true);
+    try {
+      const res = await fetch('/api/tracks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId: id, name: 'Untitled' }),
+        cache: 'no-store',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        await fetchTracks();
+      } else {
+        setError((data.error as string) || res.statusText || 'Failed to add track');
+      }
+    } finally {
+      setAddingTrack(false);
+    }
+  }, [id, fetchTracks]);
+
   const updateTrack = async (trackId: string, data: { bpm?: number; key?: string; notes?: string; name?: string }) => {
     const res = await fetch('/api/tracks', {
       method: 'PATCH',
@@ -177,7 +199,7 @@ export default function ProjectPage() {
         </div>
       )}
 
-      <div className="mt-8">
+      <div className="mt-8 flex flex-wrap gap-2">
         <input
           ref={fileInputRef}
           type="file"
@@ -195,6 +217,14 @@ export default function ProjectPage() {
           className="rounded border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm transition hover:bg-[var(--border)] disabled:opacity-50"
         >
           {uploading ? 'Uploading…' : 'Upload audio (mp3, wav, m4a)'}
+        </button>
+        <button
+          type="button"
+          onClick={addTrackWithoutFile}
+          disabled={addingTrack}
+          className="rounded border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm transition hover:bg-[var(--border)] disabled:opacity-50"
+        >
+          {addingTrack ? 'Adding…' : 'Add track (no file)'}
         </button>
       </div>
 

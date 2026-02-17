@@ -13,24 +13,49 @@ function fileTypeFromPath(path: string): 'mp3' | 'wav' | 'm4a' {
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
-    const { projectId, title, file_path } = body;
+    const { projectId, title, name: nameParam, file_path } = body;
     if (!projectId || typeof projectId !== 'string') {
       return NextResponse.json({ error: 'projectId is required' }, { status: 400 });
     }
-    if (!file_path || typeof file_path !== 'string') {
-      return NextResponse.json({ error: 'file_path is required' }, { status: 400 });
+    const name = [nameParam, title].find((n) => typeof n === 'string' && n.trim())?.trim() || 'Untitled';
+
+    let supabase;
+    try {
+      supabase = createServerSupabase();
+    } catch (envErr) {
+      const msg = envErr instanceof Error ? envErr.message : 'Supabase client failed';
+      return NextResponse.json(
+        { error: msg + '. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in Vercel.' },
+        { status: 503 }
+      );
     }
-    const name = (title && typeof title === 'string' && title.trim()) ? title.trim() : 'Untitled';
-    const file_type = fileTypeFromPath(file_path);
-    const supabase = createServerSupabase();
+
+    if (file_path && typeof file_path === 'string') {
+      const file_type = fileTypeFromPath(file_path);
+      const { data: track, error } = await supabase
+        .from('tracks')
+        .insert({ project_id: projectId, name, storage_path: file_path, file_type })
+        .select()
+        .single();
+      if (error) {
+        console.error('Tracks POST:', error.message);
+        return NextResponse.json({ error: error.message || 'Failed to create track' }, { status: 500 });
+      }
+      return NextResponse.json({ track });
+    }
+
+    // Create track without a file (manual "Add track")
     const { data: track, error } = await supabase
       .from('tracks')
-      .insert({ project_id: projectId, name, storage_path: file_path, file_type })
+      .insert({ project_id: projectId, name, storage_path: null, file_type: 'mp3' })
       .select()
       .single();
     if (error) {
-      console.error('Tracks POST:', error.message);
-      return NextResponse.json({ error: error.message || 'Failed to create track' }, { status: 500 });
+      console.error('Tracks POST (no file):', error.message);
+      return NextResponse.json(
+        { error: error.message || 'Failed to create track. You may need to run: ALTER TABLE tracks ALTER COLUMN storage_path DROP NOT NULL;' },
+        { status: 500 }
+      );
     }
     return NextResponse.json({ track });
   } catch (err) {

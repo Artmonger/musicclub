@@ -53,7 +53,8 @@ export async function GET(
         ? rows
         : rows.filter((row) => {
             const path = (row.file_path ?? row.storage_path) as string | undefined;
-            return path && existingStoragePaths!.has(path);
+            if (!path || path.trim() === '') return true;
+            return existingStoragePaths!.has(path);
           });
     const normalized = withFile.map((row) => ({
       ...row,
