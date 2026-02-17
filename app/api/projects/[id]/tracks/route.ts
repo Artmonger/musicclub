@@ -21,7 +21,23 @@ export async function GET(
         { status: 503 }
       );
     }
-    // Always read current state from Supabase so UI matches backend (e.g. after deleting in dashboard)
+    const BUCKET = 'music-files';
+
+    // List files in storage so we only show tracks that have a file (UI = directory of storage)
+    const { data: storageData, error: listError } = await supabase.storage
+      .from(BUCKET)
+      .list(projectId, { limit: 1000 });
+
+    let existingStoragePaths: Set<string> | null = null;
+    if (!listError && Array.isArray(storageData)) {
+      const fileNames = storageData.filter(
+        (item: { name?: string }) => typeof item.name === 'string' && !item.name.startsWith('.')
+      );
+      existingStoragePaths = new Set(
+        fileNames.map((item: { name: string }) => `${projectId}/${item.name}`)
+      );
+    }
+
     const { data, error } = await supabase
       .from('tracks')
       .select('*')
@@ -29,8 +45,15 @@ export async function GET(
       .order('created_at', { ascending: false });
 
     if (error) throw error;
-    const rows = data ?? [];
-    const normalized = rows.map((row: Record<string, unknown>) => ({
+    const rows = (data ?? []) as Record<string, unknown>[];
+    const withFile =
+      existingStoragePaths === null
+        ? rows
+        : rows.filter((row) => {
+            const path = (row.file_path ?? row.storage_path) as string | undefined;
+            return path && existingStoragePaths!.has(path);
+          });
+    const normalized = withFile.map((row) => ({
       ...row,
       name: row.title ?? row.name,
       storage_path: row.file_path ?? row.storage_path,
