@@ -18,7 +18,7 @@ Private single-user music project management: projects, audio uploads (mp3, wav,
 1. **Supabase**
    - Create a project at [supabase.com](https://supabase.com).
    - In the SQL Editor, run `supabase/schema.sql`.
-   - In Storage, create a **private** bucket named `audio-files` (no public access).
+   - In Storage, create a **private** bucket named `Music Files` (no public access).
 
 2. **Env**
    - Copy `.env.local.example` to `.env.local`.

@@ -50,7 +50,7 @@ export async function DELETE(request: Request) {
       .single();
 
     if (track?.storage_path) {
-      await supabase.storage.from('audio-files').remove([track.storage_path]);
+      await supabase.storage.from('Music Files').remove([track.storage_path]);
     }
 
     const { error } = await supabase.from('tracks').delete().eq('id', id);

@@ -1,24 +1,28 @@
 import { createClient } from '@supabase/supabase-js';
 
-/**
- * Server-only Supabase client using the service role key.
- * Use this in API routes and server components only.
- * Never import or use in client components.
- */
-export function createServerSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const getSupabaseUrl = () =>
+  process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
 
-  if (!url || !serviceRoleKey) {
+/**
+ * Server-only Supabase client (service role).
+ * Use SUPABASE_URL or NEXT_PUBLIC_SUPABASE_URL in env.
+ */
+export function supabaseServer() {
+  const url = getSupabaseUrl();
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) {
     throw new Error(
-      'Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY. Add them to .env.local.'
+      'Missing SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY'
     );
   }
-
-  return createClient(url, serviceRoleKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
+  return createClient(url, key, {
+    auth: { autoRefreshToken: false, persistSession: false },
   });
+}
+
+/**
+ * @deprecated Use supabaseServer() instead.
+ */
+export function createServerSupabase() {
+  return supabaseServer();
 }

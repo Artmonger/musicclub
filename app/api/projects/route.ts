@@ -1,50 +1,25 @@
-import { NextResponse } from 'next/server';
-import { createServerSupabase } from '@/lib/supabase-server';
+import { NextResponse } from "next/server";
+import { supabaseServer } from "@/lib/supabase-server";
 
 export async function GET() {
-  try {
-    const supabase = createServerSupabase();
-    const { data, error } = await supabase
-      .from('projects')
-      .select('*')
-      .order('updated_at', { ascending: false });
+  const { data, error } = await supabaseServer()
+    .from("projects")
+    .select("*")
+    .order("created_at", { ascending: false });
 
-    if (error) throw error;
-    return NextResponse.json(data);
-  } catch (err) {
-    console.error('Projects GET:', err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Failed to fetch projects' },
-      { status: 500 }
-    );
-  }
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json(data);
 }
 
-export async function POST(request: Request) {
-  try {
-    const body = await request.json();
-    const { name, description } = body;
-    if (!name || typeof name !== 'string') {
-      return NextResponse.json(
-        { error: 'name is required' },
-        { status: 400 }
-      );
-    }
+export async function POST(req: Request) {
+  const { name } = await req.json();
 
-    const supabase = createServerSupabase();
-    const { data, error } = await supabase
-      .from('projects')
-      .insert({ name, description: description ?? null })
-      .select()
-      .single();
+  const { data, error } = await supabaseServer()
+    .from("projects")
+    .insert({ name })
+    .select("*")
+    .single();
 
-    if (error) throw error;
-    return NextResponse.json(data);
-  } catch (err) {
-    console.error('Projects POST:', err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Failed to create project' },
-      { status: 500 }
-    );
-  }
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json(data);
 }

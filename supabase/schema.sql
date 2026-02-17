@@ -47,4 +47,4 @@ CREATE TRIGGER tracks_updated_at
   FOR EACH ROW EXECUTE PROCEDURE set_updated_at();
 
 -- Storage bucket for audio (create via Supabase Dashboard or API)
--- Bucket name: audio-files (private, no public access)
+-- Bucket name: Music Files (private, no public access)

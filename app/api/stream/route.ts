@@ -22,7 +22,7 @@ export async function GET(request: Request) {
 
     const supabase = createServerSupabase();
     const { data, error } = await supabase.storage
-      .from('audio-files')
+      .from('Music Files')
       .createSignedUrl(path, expiresIn);
 
     if (error) throw error;
