@@ -132,7 +132,10 @@ export default function ProjectPage() {
             No tracks. Upload audio above.
           </li>
         ) : (
-          tracks.filter((t) => t?.id).map((track) => (
+          tracks.filter((t) => t?.id).map((track) => {
+            const streamPath = track.storage_path ?? (track as { file_path?: string }).file_path ?? '';
+            const displayName = track.name ?? (track as { title?: string }).title ?? 'Track';
+            return (
             <li
               key={track.id}
               className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4"
@@ -142,11 +145,11 @@ export default function ProjectPage() {
                   {editingTrack === track.id ? (
                     <input
                       type="text"
-                      defaultValue={track.name}
+                      defaultValue={displayName}
                       className="w-full rounded border border-[var(--border)] bg-[var(--bg)] px-2 py-1 text-sm"
                       onBlur={(e) => {
                         const v = e.target.value.trim();
-                        if (v && v !== track.name) updateTrack(track.id, { name: v });
+                        if (v && v !== displayName) updateTrack(track.id, { name: v });
                         setEditingTrack(null);
                       }}
                       onKeyDown={(e) => {
@@ -164,7 +167,7 @@ export default function ProjectPage() {
                       onClick={() => setEditingTrack(track.id)}
                       className="text-left font-medium hover:underline"
                     >
-                      {track.name}
+                      {displayName}
                     </button>
                   )}
                 </div>
@@ -177,10 +180,14 @@ export default function ProjectPage() {
                 </button>
               </div>
 
-              <AudioPlayer
-                streamUrlApi={`/api/stream?path=${encodeURIComponent(track.storage_path)}`}
-                trackName={track.name}
-              />
+              {streamPath ? (
+                <AudioPlayer
+                  streamUrlApi={`/api/stream?path=${encodeURIComponent(streamPath)}`}
+                  trackName={displayName}
+                />
+              ) : (
+                <p className="text-sm text-amber-500">File path missing for this track.</p>
+              )}
 
               <div className="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
                 <div>
@@ -220,7 +227,8 @@ export default function ProjectPage() {
                 </div>
               </div>
             </li>
-          ))
+          );
+          })
         )}
       </ul>
     </div>

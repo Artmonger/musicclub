@@ -10,10 +10,10 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const path = searchParams.get('path');
+    const path = searchParams.get('path')?.trim();
     const expiresIn = 3600; // 1 hour
 
-    if (!path) {
+    if (!path || path === 'undefined') {
       return NextResponse.json(
         { error: 'path query parameter is required' },
         { status: 400 }

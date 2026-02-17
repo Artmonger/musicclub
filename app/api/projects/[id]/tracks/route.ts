@@ -18,7 +18,13 @@ export async function GET(
       .order('created_at', { ascending: false });
 
     if (error) throw error;
-    return NextResponse.json(data ?? [], {
+    const rows = data ?? [];
+    const normalized = rows.map((row: Record<string, unknown>) => ({
+      ...row,
+      name: row.title ?? row.name,
+      storage_path: row.file_path ?? row.storage_path,
+    }));
+    return NextResponse.json(normalized, {
       headers: { 'Cache-Control': 'no-store, max-age=0' },
     });
   } catch (err) {
