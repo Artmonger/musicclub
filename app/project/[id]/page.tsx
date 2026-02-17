@@ -33,26 +33,30 @@ export default function ProjectPage() {
     }
   }, [id]);
 
-  /** Fetches tracks from API, updates state, returns the list (so callers can retry if empty). */
-  const fetchTracks = useCallback(async (): Promise<Track[]> => {
-    const url = `/api/projects/${id}/tracks?t=${Date.now()}`;
-    const res = await fetch(url, {
-      cache: 'no-store',
-      headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
-    });
-    const data = await res.json().catch(() => ({}));
-    if (res.ok) {
-      const list = Array.isArray(data) ? data : [];
-      lastTracksResponseRef.current = list;
-      console.log('[fetchTracks] ok count=%s', list.length, list.length ? list : '');
-      setTracks(list);
-      setError(null);
-      return list as Track[];
-    }
-    setTracks([]);
-    setError((data.error as string) || res.statusText || 'Failed to load tracks');
-    return [];
-  }, [id]);
+  /** Fetches tracks from API, updates state, returns the list. preserveStateIfEmpty: after upload, if API returns [] don't wipe state (keeps optimistic track visible). */
+  const fetchTracks = useCallback(
+    async (options?: { preserveStateIfEmpty?: boolean }): Promise<Track[]> => {
+      const url = `/api/projects/${id}/tracks?t=${Date.now()}`;
+      const res = await fetch(url, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        const list = Array.isArray(data) ? data : [];
+        lastTracksResponseRef.current = list;
+        console.log('[fetchTracks] ok count=%s', list.length, list.length ? list : '');
+        const preserve = options?.preserveStateIfEmpty && list.length === 0;
+        if (!preserve) setTracks(list);
+        setError(null);
+        return list as Track[];
+      }
+      if (!options?.preserveStateIfEmpty) setTracks([]);
+      setError((data.error as string) || res.statusText || 'Failed to load tracks');
+      return [];
+    },
+    [id]
+  );
 
   /** Hard refresh: clear in-memory state and re-fetch project + tracks from Supabase only. */
   const loadFromBackend = useCallback(() => {
@@ -161,10 +165,10 @@ export default function ProjectPage() {
                 // Fallback path: the API already created the track + storage object.
                 setUploadStage(`saving: ${file.name}`);
                 await new Promise((r) => setTimeout(r, 400));
-                let list = await fetchTracks();
+                let list = await fetchTracks({ preserveStateIfEmpty: true });
                 for (let retry = 0; retry < 2 && list.length === 0; retry++) {
                   await new Promise((r) => setTimeout(r, 1000));
-                  list = await fetchTracks();
+                  list = await fetchTracks({ preserveStateIfEmpty: true });
                 }
                 setUploadStage(`done: ${file.name}`);
                 continue;
@@ -211,13 +215,13 @@ export default function ProjectPage() {
               setTracks((prev) => [normalized, ...prev]);
             }
 
-            // Stage 4: done — refetch from API; retry if empty (read-after-write delay)
+            // Stage 4: done — refetch from API; if API still returns [] keep optimistic track visible
             setUploadStage(`done: ${file.name}`);
             await new Promise((r) => setTimeout(r, 400));
-            let list = await fetchTracks();
+            let list = await fetchTracks({ preserveStateIfEmpty: true });
             for (let retry = 0; retry < 2 && list.length === 0; retry++) {
               await new Promise((r) => setTimeout(r, 1000));
-              list = await fetchTracks();
+              list = await fetchTracks({ preserveStateIfEmpty: true });
             }
           } catch (fileErr) {
             console.error('[upload] file failed', file.name, fileErr);
@@ -307,6 +311,11 @@ export default function ProjectPage() {
       <p className="mt-2 text-xs text-[var(--muted)]" aria-live="polite">
         Tracks from API: {tracks.length} — if this doesn’t match Supabase, check Vercel env (SUPABASE_URL, SUPABASE_SECRET_KEY); open <a href="/api/debug/tracks-total" target="_blank" rel="noopener noreferrer" className="underline">/api/debug/tracks-total</a> to see if the server sees any rows (response headers here include X-Tracks-Table-Total).
       </p>
+      {tracks.length > 0 && lastTracksResponseRef.current.length === 0 && (
+        <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+          List may be out of sync with server (API returned 0). Use Hard Refresh to re-check.
+        </p>
+      )}
 
       <details className="mt-4 rounded border border-[var(--border)] bg-[var(--surface)] p-3 text-left">
         <summary className="cursor-pointer text-xs font-medium text-[var(--muted)]">Debug: projectId, API count, raw response</summary>
@@ -360,9 +369,21 @@ export default function ProjectPage() {
 
       <ul className="mt-8 space-y-4" data-source="supabase" data-track-count={tracks.filter((t) => t?.id).length}>
         {tracks.filter((t) => t?.id).length === 0 ? (
-          <li className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-6 text-center text-sm text-[var(--muted)]">
-            No tracks. Upload audio above.
-          </li>
+          <>
+            <li className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-6 text-center text-sm text-[var(--muted)]">
+              No tracks. Upload audio above.
+            </li>
+            <li className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-left text-sm text-amber-700 dark:text-amber-300">
+              <strong className="block mb-2">Tracks disappear after refresh?</strong>
+              The app only shows what the API returns. If you have tracks in Supabase but see 0 here, the server is likely using a <em>different Supabase project</em> than your dashboard.
+              <ol className="mt-2 list-decimal list-inside space-y-1">
+                <li>Open <a href="/api/debug/tracks-total" target="_blank" rel="noopener noreferrer" className="underline">/api/debug/tracks-total</a>. Check <code>total</code> and <code>supabaseHost</code>.</li>
+                <li>If <code>total</code> is 0: In <strong>Supabase</strong> dashboard → Settings → API, copy <strong>Project URL</strong> and the <strong>service_role</strong> secret.</li>
+                <li>In <strong>Vercel</strong> → Project → Settings → Environment Variables, set <code>SUPABASE_URL</code> and <code>SUPABASE_SECRET_KEY</code> to those exact values (Production).</li>
+                <li>Redeploy. Then refresh this page.</li>
+              </ol>
+            </li>
+          </>
         ) : (
           tracks.filter((t) => t?.id).map((track) => {
             const streamPath = track.file_path ?? (track as { storage_path?: string }).storage_path ?? '';
