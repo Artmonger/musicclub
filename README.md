@@ -11,7 +11,7 @@ Private single-user music project management: projects, audio uploads (mp3, wav,
 
 - No authentication or sign-up; single user only.
 - **Supabase service role key** is used only in Next.js server code (API routes). It is never sent to the client.
-- `NEXT_PUBLIC_SUPABASE_URL` is public by design (required for Supabase client); the client never uses Supabase directly—all data and storage access goes through your API.
+- Use **SUPABASE_URL** and **SUPABASE_SECRET_KEY** (server-only). All data and storage access goes through your API; the client never talks to Supabase directly.
 
 ## Setup
 
@@ -22,7 +22,7 @@ Private single-user music project management: projects, audio uploads (mp3, wav,
 
 2. **Env**
    - Copy `.env.local.example` to `.env.local`.
-   - Set `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` (from Supabase → Settings → API).
+   - Set `SUPABASE_URL` and `SUPABASE_SECRET_KEY` (from Supabase → Settings → API; use the **Project URL** and **service_role** secret).
 
 3. **Run**
    - `npm install`
@@ -31,7 +31,7 @@ Private single-user music project management: projects, audio uploads (mp3, wav,
 ## Deploy (Vercel)
 
 1. Push the repo and import the project in Vercel.
-2. Add env vars: `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.
+2. Add env vars: `SUPABASE_URL`, `SUPABASE_SECRET_KEY` (same names as in Vercel Environment Variables).
 3. Deploy.
 
 Note: Vercel serverless request body limit is 4.5 MB (Hobby) or 5 MB (Pro). For larger uploads, use Supabase client upload with signed upload URLs issued by your API, or another upload path.

@@ -19,6 +19,7 @@ export default function ProjectPage() {
   const [uploadStage, setUploadStage] = useState<string | null>(null);
   const [editingTrack, setEditingTrack] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const lastTracksResponseRef = useRef<unknown[]>([]);
 
   const fetchProject = useCallback(async () => {
     const res = await fetch(`/api/projects/${id}`, { cache: 'no-store' });
@@ -32,7 +33,8 @@ export default function ProjectPage() {
     }
   }, [id]);
 
-  const fetchTracks = useCallback(async () => {
+  /** Fetches tracks from API, updates state, returns the list (so callers can retry if empty). */
+  const fetchTracks = useCallback(async (): Promise<Track[]> => {
     const url = `/api/projects/${id}/tracks?t=${Date.now()}`;
     const res = await fetch(url, {
       cache: 'no-store',
@@ -41,12 +43,15 @@ export default function ProjectPage() {
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
       const list = Array.isArray(data) ? data : [];
+      lastTracksResponseRef.current = list;
+      console.log('[fetchTracks] ok count=%s', list.length, list.length ? list : '');
       setTracks(list);
       setError(null);
-    } else {
-      setTracks([]);
-      setError((data.error as string) || res.statusText || 'Failed to load tracks');
+      return list as Track[];
     }
+    setTracks([]);
+    setError((data.error as string) || res.statusText || 'Failed to load tracks');
+    return [];
   }, [id]);
 
   /** Hard refresh: clear in-memory state and re-fetch project + tracks from Supabase only. */
@@ -81,7 +86,7 @@ export default function ProjectPage() {
       input.value = '';
       if (!fileList.length) return;
 
-      const projectId = id;
+      const projectId = id; // same as route [id]; used for POST body and GET /api/projects/[id]/tracks
       setError(null);
       setUploading(true);
 
@@ -155,7 +160,12 @@ export default function ProjectPage() {
 
                 // Fallback path: the API already created the track + storage object.
                 setUploadStage(`saving: ${file.name}`);
-                await fetchTracks();
+                await new Promise((r) => setTimeout(r, 400));
+                let list = await fetchTracks();
+                for (let retry = 0; retry < 2 && list.length === 0; retry++) {
+                  await new Promise((r) => setTimeout(r, 1000));
+                  list = await fetchTracks();
+                }
                 setUploadStage(`done: ${file.name}`);
                 continue;
               }
@@ -185,9 +195,30 @@ export default function ProjectPage() {
               throw new Error((saveData.error as string) || 'Failed to save track metadata');
             }
 
-            // Stage 4: done
+            // Optimistic: show new track immediately (same shape as GET list)
+            const created = (saveData as { track?: Record<string, unknown> }).track;
+            if (created && typeof created.id === 'string') {
+              const normalized: Track = {
+                ...(created as Partial<Track>),
+                id: created.id,
+                project_id: projectId,
+                title: (created.title as string) ?? file.name.replace(/\.[^.]+$/, ''),
+                file_path: (created.file_path as string) ?? path,
+                name: (created.title as string) ?? (created.name as string) ?? file.name.replace(/\.[^.]+$/, ''),
+                storage_path: (created.file_path as string) ?? path,
+              } as Track;
+              console.log('[upload] created track id=', created.id);
+              setTracks((prev) => [normalized, ...prev]);
+            }
+
+            // Stage 4: done — refetch from API; retry if empty (read-after-write delay)
             setUploadStage(`done: ${file.name}`);
-            await fetchTracks();
+            await new Promise((r) => setTimeout(r, 400));
+            let list = await fetchTracks();
+            for (let retry = 0; retry < 2 && list.length === 0; retry++) {
+              await new Promise((r) => setTimeout(r, 1000));
+              list = await fetchTracks();
+            }
           } catch (fileErr) {
             console.error('[upload] file failed', file.name, fileErr);
             setError(
@@ -274,8 +305,19 @@ export default function ProjectPage() {
       </div>
 
       <p className="mt-2 text-xs text-[var(--muted)]" aria-live="polite">
-        Tracks from API: {tracks.length} — if this doesn’t match Supabase, check Vercel env (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY).
+        Tracks from API: {tracks.length} — if this doesn’t match Supabase, check Vercel env (SUPABASE_URL, SUPABASE_SECRET_KEY); open <a href="/api/debug/tracks-total" target="_blank" rel="noopener noreferrer" className="underline">/api/debug/tracks-total</a> to see if the server sees any rows (response headers here include X-Tracks-Table-Total).
       </p>
+
+      <details className="mt-4 rounded border border-[var(--border)] bg-[var(--surface)] p-3 text-left">
+        <summary className="cursor-pointer text-xs font-medium text-[var(--muted)]">Debug: projectId, API count, raw response</summary>
+        <div className="mt-2 space-y-1 text-xs text-[var(--muted)]">
+          <p><strong>projectId:</strong> {id}</p>
+          <p><strong>count from API:</strong> {lastTracksResponseRef.current.length}</p>
+          <pre className="max-h-40 overflow-auto rounded bg-[var(--bg)] p-2 font-mono whitespace-pre-wrap break-all">
+            {JSON.stringify(lastTracksResponseRef.current, null, 2)}
+          </pre>
+        </div>
+      </details>
 
       {error && (
         <div className="mt-4 rounded border border-amber-500/50 bg-amber-500/10 px-4 py-2 text-sm text-amber-600 dark:text-amber-400">

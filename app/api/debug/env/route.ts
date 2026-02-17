@@ -9,8 +9,11 @@ export async function GET() {
 
   return NextResponse.json(
     {
-      supabaseUrl,
-      hasServiceRoleKey: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+      supabaseUrlPrefix: supabaseUrl ? `${supabaseUrl.slice(0, 30)}…` : null,
+      hasSupabaseUrl: Boolean(process.env.SUPABASE_URL),
+      hasSupabaseSecretKey: Boolean(process.env.SUPABASE_SECRET_KEY),
+      hasNextPublicSupabaseUrl: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
+      hasServiceRoleKeyFallback: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
     },
     {
       headers: {

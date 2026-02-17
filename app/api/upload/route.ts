@@ -45,7 +45,7 @@ export async function POST(request: Request) {
       const msg = envErr instanceof Error ? envErr.message : 'Supabase client failed';
       console.error('Upload (env):', msg);
       return NextResponse.json(
-        { error: msg + '. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in Vercel.' },
+        { error: msg + '. Set SUPABASE_URL and SUPABASE_SECRET_KEY in Vercel.' },
         { status: 503 }
       );
     }

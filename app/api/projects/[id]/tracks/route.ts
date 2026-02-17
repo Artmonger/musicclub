@@ -6,7 +6,7 @@ export const runtime = 'nodejs';
 
 /**
  * Single source of truth for track list. Supabase DB only; no static/cache.
- * GET /api/projects/[projectId]/tracks
+ * GET /api/projects/[projectId]/tracks — always queries Supabase; never cached.
  */
 export async function GET(
   _request: Request,
@@ -21,11 +21,15 @@ export async function GET(
       const msg = envErr instanceof Error ? envErr.message : 'Supabase client failed';
       console.error('Tracks GET (env):', msg);
       return NextResponse.json(
-        { error: msg + '. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in Vercel.' },
+        { error: msg + '. Set SUPABASE_URL and SUPABASE_SECRET_KEY in Vercel.' },
         { status: 503 }
       );
     }
 
+    // Diagnostic: can we see any rows at all? (unfiltered count)
+    const { count: tableCount } = await supabase
+      .from('tracks')
+      .select('*', { count: 'exact', head: true });
     const { data, error } = await supabase
       .from('tracks')
       .select('*')
@@ -34,6 +38,7 @@ export async function GET(
 
     if (error) throw error;
     const rows = (data ?? []) as Record<string, unknown>[];
+    console.log('[tracks GET] projectId=%s count=%s tableTotal=%s', projectId, rows.length, tableCount ?? '?');
     const normalized = rows.map((row) => ({
       ...row,
       name: row.title ?? row.name,
@@ -46,6 +51,8 @@ export async function GET(
         Pragma: 'no-cache',
         Expires: '0',
         'X-Track-Count': String(normalized.length),
+        'X-Project-Id': projectId,
+        'X-Tracks-Table-Total': String(tableCount ?? ''),
       },
     });
   } catch (err) {
