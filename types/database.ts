@@ -38,7 +38,6 @@ export interface Database {
           project_id: string;
           name: string;
           storage_path: string | null;
-          file_type: 'mp3' | 'wav' | 'm4a';
           bpm: number | null;
           key: string | null;
           notes: string | null;
@@ -50,7 +49,6 @@ export interface Database {
           project_id: string;
           name: string;
           storage_path?: string | null;
-          file_type: 'mp3' | 'wav' | 'm4a';
           bpm?: number | null;
           key?: string | null;
           notes?: string | null;
@@ -62,7 +60,6 @@ export interface Database {
           project_id?: string;
           name?: string;
           storage_path?: string;
-          file_type?: 'mp3' | 'wav' | 'm4a';
           bpm?: number | null;
           key?: string | null;
           notes?: string | null;

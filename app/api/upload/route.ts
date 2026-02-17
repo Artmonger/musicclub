@@ -64,7 +64,6 @@ export async function POST(request: Request) {
         project_id: projectId,
         name,
         storage_path: storagePath,
-        file_type: fileType,
       })
       .select()
       .single();

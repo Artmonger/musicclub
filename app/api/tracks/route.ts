@@ -3,13 +3,6 @@ import { createServerSupabase } from '@/lib/supabase-server';
 
 const BUCKET = 'music-files';
 
-function fileTypeFromPath(path: string): 'mp3' | 'wav' | 'm4a' {
-  const ext = path.split('.').pop()?.toLowerCase() ?? '';
-  if (ext === 'wav') return 'wav';
-  if (ext === 'm4a') return 'm4a';
-  return 'mp3';
-}
-
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
@@ -31,10 +24,9 @@ export async function POST(request: Request) {
     }
 
     if (file_path && typeof file_path === 'string') {
-      const file_type = fileTypeFromPath(file_path);
       const { data: track, error } = await supabase
         .from('tracks')
-        .insert({ project_id: projectId, name, storage_path: file_path, file_type })
+        .insert({ project_id: projectId, name, storage_path: file_path })
         .select()
         .single();
       if (error) {
@@ -47,7 +39,7 @@ export async function POST(request: Request) {
     // Create track without a file (manual "Add track")
     const { data: track, error } = await supabase
       .from('tracks')
-      .insert({ project_id: projectId, name, storage_path: null, file_type: 'mp3' })
+      .insert({ project_id: projectId, name, storage_path: null })
       .select()
       .single();
     if (error) {

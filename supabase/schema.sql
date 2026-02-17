@@ -16,7 +16,6 @@ CREATE TABLE IF NOT EXISTS tracks (
   project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   storage_path TEXT UNIQUE,
-  file_type TEXT NOT NULL CHECK (file_type IN ('mp3', 'wav', 'm4a')) DEFAULT 'mp3',
   bpm INTEGER,
   key TEXT,
   notes TEXT,
