@@ -38,6 +38,8 @@ Private single-user music project management: projects, audio uploads (mp3, wav,
 
 Note: Vercel serverless request body limit is 4.5 MB (Hobby) or 5 MB (Pro). For larger uploads, use Supabase client upload with signed upload URLs issued by your API, or another upload path.
 
+**If GET /api/projects/[id]/tracks returns [] but Supabase has rows:** In Supabase SQL Editor, run `supabase/migrations/20250217000000_disable_rls_projects_tracks.sql` to disable RLS on `projects` and `tracks` so the service role can read what it writes.
+
 ## API (all server-side; call from your app only)
 
 | Method | Path | Description |
