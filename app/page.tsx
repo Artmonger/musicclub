@@ -10,6 +10,9 @@ export default function HomePage() {
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDesc, setNewDesc] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editDesc, setEditDesc] = useState('');
 
   const fetchProjects = async () => {
     const res = await fetch('/api/projects');
@@ -43,6 +46,33 @@ export default function HomePage() {
     } finally {
       setCreating(false);
     }
+  };
+
+  const startEdit = (p: Project) => {
+    setEditingId(p.id);
+    setEditName(p.name ?? '');
+    setEditDesc(p.description ?? '');
+  };
+
+  const saveEdit = async () => {
+    if (!editingId || !editName.trim()) return;
+    const res = await fetch(`/api/projects/${editingId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: editName.trim(), description: editDesc.trim() || null }),
+      cache: 'no-store',
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      setProjects((prev) => prev.map((x) => (x.id === editingId ? updated : x)));
+      setEditingId(null);
+    }
+  };
+
+  const deleteProject = async (projectId: string) => {
+    if (!confirm('Delete this project and all its tracks? This cannot be undone.')) return;
+    const res = await fetch(`/api/projects/${projectId}`, { method: 'DELETE', cache: 'no-store' });
+    if (res.ok) setProjects((prev) => prev.filter((x) => x.id !== projectId));
   };
 
   return (
@@ -88,21 +118,81 @@ export default function HomePage() {
 
       <ul className="mt-10 space-y-1">
         {loading ? (
-          <li className="py-4 text-sm text-[var(--muted)]">Loading…</li>
+          <>
+            {[1, 2, 3].map((i) => (
+              <li key={i} className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-3">
+                <div className="animate-pulse h-5 w-48 rounded bg-[var(--border)]" />
+                <div className="mt-1 h-4 w-32 rounded bg-[var(--border)]" />
+              </li>
+            ))}
+          </>
         ) : projects.length === 0 ? (
           <li className="py-8 text-sm text-[var(--muted)]">No projects yet. Create one above.</li>
         ) : (
           projects.map((p) => (
-            <li key={p.id}>
-              <Link
-                href={`/project/${p.id}`}
-                className="block rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-3 transition hover:border-[var(--muted)]"
-              >
-                <span className="font-medium">{p.name}</span>
-                {p.description && (
-                  <span className="ml-2 text-sm text-[var(--muted)]">{p.description}</span>
-                )}
-              </Link>
+            <li key={p.id} className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-3">
+              {editingId === p.id ? (
+                <div className="flex flex-col gap-2">
+                  <input
+                    type="text"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    className="w-full rounded border border-[var(--border)] bg-[var(--bg)] px-2 py-1.5 text-sm"
+                    placeholder="Project name"
+                  />
+                  <input
+                    type="text"
+                    value={editDesc}
+                    onChange={(e) => setEditDesc(e.target.value)}
+                    className="w-full rounded border border-[var(--border)] bg-[var(--bg)] px-2 py-1 text-sm"
+                    placeholder="Description (optional)"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={saveEdit}
+                      className="rounded border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-sm hover:underline"
+                    >
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingId(null)}
+                      className="text-sm text-[var(--muted)] hover:underline"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between gap-2">
+                  <Link
+                    href={`/project/${p.id}`}
+                    className="min-w-0 flex-1 transition hover:underline"
+                  >
+                    <span className="font-medium">{p.name}</span>
+                    {p.description && (
+                      <span className="ml-2 text-sm text-[var(--muted)]">{p.description}</span>
+                    )}
+                  </Link>
+                  <div className="flex shrink-0 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => startEdit(p)}
+                      className="text-xs text-[var(--muted)] hover:underline"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.preventDefault(); deleteProject(p.id); }}
+                      className="text-xs text-[var(--muted)] hover:text-red-400 hover:underline"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              )}
             </li>
           ))
         )}

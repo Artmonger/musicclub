@@ -2,14 +2,17 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { AudioPlayer } from '@/components/AudioPlayer';
 import type { Project } from '@/types/database';
 import type { Track } from '@/types/database';
 
+const isDev = typeof process !== 'undefined' && process.env.NODE_ENV === 'development';
+
 /** Single source of truth: tracks only from GET /api/projects/[id]/tracks (Supabase). No localStorage or other persistence. */
 export default function ProjectPage() {
   const params = useParams();
+  const router = useRouter();
   const id = params.id as string;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [project, setProject] = useState<Project | null>(null);
@@ -18,8 +21,20 @@ export default function ProjectPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadStage, setUploadStage] = useState<string | null>(null);
   const [editingTrack, setEditingTrack] = useState<string | null>(null);
+  const [savedFeedback, setSavedFeedback] = useState<{ trackId: string; field: string } | null>(null);
+  const [filterQuery, setFilterQuery] = useState('');
+  const [editingProject, setEditingProject] = useState(false);
+  const [projectNameInput, setProjectNameInput] = useState('');
+  const [projectDescInput, setProjectDescInput] = useState('');
   const [error, setError] = useState<string | null>(null);
   const lastTracksResponseRef = useRef<unknown[]>([]);
+
+  useEffect(() => {
+    if (savedFeedback) {
+      const t = setTimeout(() => setSavedFeedback(null), 2000);
+      return () => clearTimeout(t);
+    }
+  }, [savedFeedback]);
 
   const fetchProject = useCallback(async () => {
     const res = await fetch(`/api/projects/${id}`, { cache: 'no-store' });
@@ -241,7 +256,11 @@ export default function ProjectPage() {
     [id, fetchTracks]
   );
 
-  const updateTrack = async (trackId: string, data: { bpm?: number; key?: string; notes?: string; name?: string }) => {
+  const updateTrack = async (
+    trackId: string,
+    data: { bpm?: number; key?: string; notes?: string; name?: string },
+    field?: string
+  ) => {
     const res = await fetch('/api/tracks', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -251,7 +270,51 @@ export default function ProjectPage() {
     if (res.ok) {
       await fetchTracks();
       setEditingTrack(null);
+      if (field) setSavedFeedback({ trackId, field });
     }
+  };
+
+  const updateProject = async () => {
+    const name = projectNameInput.trim();
+    if (!name) return;
+    const res = await fetch(`/api/projects/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, description: projectDescInput.trim() || null }),
+      cache: 'no-store',
+    });
+    if (res.ok) {
+      const data = await res.json();
+      setProject(data);
+      setEditingProject(false);
+    }
+  };
+
+  const deleteProject = async () => {
+    if (!confirm('Delete this project and all its tracks? This cannot be undone.')) return;
+    const res = await fetch(`/api/projects/${id}`, { method: 'DELETE', cache: 'no-store' });
+    if (res.ok) router.push('/');
+  };
+
+  const exportMetadata = () => {
+    const payload = {
+      project: { id: project?.id, name: project?.name, description: project?.description },
+      exportedAt: new Date().toISOString(),
+      tracks: tracks.map((t) => ({
+        id: t.id,
+        title: t.title ?? (t as { name?: string }).name,
+        bpm: t.bpm,
+        key: t.key,
+        notes: t.notes,
+        file_path: t.file_path ?? (t as { storage_path?: string }).storage_path,
+      })),
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `project-${project?.name ?? id}-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
   };
 
   const deleteTrack = async (trackId: string) => {
@@ -260,10 +323,49 @@ export default function ProjectPage() {
     if (res.ok) await fetchTracks();
   };
 
+  useEffect(() => {
+    if (project) {
+      setProjectNameInput(project.name ?? '');
+      setProjectDescInput(project.description ?? '');
+    }
+  }, [project?.id, project?.name, project?.description]);
+
+  const filteredTracks = filterQuery.trim()
+    ? tracks.filter((t) => {
+        const q = filterQuery.toLowerCase();
+        const name = (t.title ?? (t as { name?: string }).name ?? '').toLowerCase();
+        const key = (t.key ?? '').toLowerCase();
+        const notes = (t.notes ?? '').toLowerCase();
+        const bpm = String(t.bpm ?? '');
+        return name.includes(q) || key.includes(q) || notes.includes(q) || bpm.includes(q);
+      })
+    : tracks;
+
   if (loading && !project && !error) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-12">
-        <p className="text-[var(--muted)]">Loading…</p>
+        <div className="animate-pulse space-y-4">
+          <div className="h-4 w-24 rounded bg-[var(--border)]" />
+          <div className="h-8 w-64 rounded bg-[var(--border)]" />
+          <div className="h-4 w-full rounded bg-[var(--border)]" />
+          <div className="mt-8 flex gap-3">
+            <div className="h-10 w-40 rounded bg-[var(--border)]" />
+            <div className="h-10 w-24 rounded bg-[var(--border)]" />
+          </div>
+          <ul className="mt-8 space-y-4">
+            {[1, 2, 3].map((i) => (
+              <li key={i} className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
+                <div className="h-5 w-3/4 rounded bg-[var(--border)]" />
+                <div className="mt-3 h-12 w-full rounded bg-[var(--border)]" />
+                <div className="mt-3 flex gap-2">
+                  <div className="h-8 w-16 rounded bg-[var(--border)]" />
+                  <div className="h-8 w-20 rounded bg-[var(--border)]" />
+                  <div className="h-8 w-24 rounded bg-[var(--border)]" />
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
       </div>
     );
   }
@@ -277,7 +379,7 @@ export default function ProjectPage() {
           onClick={() => loadFromBackend()}
           className="mt-4 rounded border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-sm hover:underline"
         >
-          Hard Refresh from Supabase
+          Refresh
         </button>
         <Link href="/" className="ml-3 text-sm text-[var(--muted)] hover:underline">
           ← Projects
@@ -291,42 +393,107 @@ export default function ProjectPage() {
       <Link href="/" className="text-sm text-[var(--muted)] hover:underline">
         ← Projects
       </Link>
-      <div className="mt-4 flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{project.name}</h1>
-          {project.description && (
-            <p className="mt-1 text-sm text-[var(--muted)]">{project.description}</p>
+      <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          {editingProject ? (
+            <div className="space-y-2">
+              <input
+                type="text"
+                value={projectNameInput}
+                onChange={(e) => setProjectNameInput(e.target.value)}
+                className="w-full rounded border border-[var(--border)] bg-[var(--bg)] px-2 py-1.5 text-lg font-semibold"
+                placeholder="Project name"
+              />
+              <input
+                type="text"
+                value={projectDescInput}
+                onChange={(e) => setProjectDescInput(e.target.value)}
+                className="w-full rounded border border-[var(--border)] bg-[var(--bg)] px-2 py-1 text-sm"
+                placeholder="Description (optional)"
+              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={updateProject}
+                  className="rounded border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-sm hover:underline"
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setEditingProject(false); setProjectNameInput(project?.name ?? ''); setProjectDescInput(project?.description ?? ''); }}
+                  className="text-sm text-[var(--muted)] hover:underline"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <h1 className="text-2xl font-semibold tracking-tight">{project.name}</h1>
+              {project.description && (
+                <p className="mt-1 text-sm text-[var(--muted)]">{project.description}</p>
+              )}
+            </>
           )}
         </div>
-        <button
-          type="button"
-          onClick={() => loadFromBackend()}
-          className="shrink-0 rounded border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-sm text-[var(--muted)] hover:underline"
-          title="Clear in-memory state and re-fetch project + tracks from Supabase only (no cache)"
-        >
-          Hard Refresh from Supabase
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {!editingProject && (
+            <button
+              type="button"
+              onClick={() => setEditingProject(true)}
+              className="rounded border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-sm text-[var(--muted)] hover:underline"
+            >
+              Edit project
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => loadFromBackend()}
+            className="rounded border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-sm text-[var(--muted)] hover:underline"
+            title="Re-fetch project and tracks from server"
+          >
+            Refresh
+          </button>
+          <button
+            type="button"
+            onClick={exportMetadata}
+            className="rounded border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-sm text-[var(--muted)] hover:underline"
+          >
+            Export JSON
+          </button>
+          <button
+            type="button"
+            onClick={deleteProject}
+            className="rounded border border-red-500/50 bg-red-500/10 px-3 py-1.5 text-sm text-red-600 dark:text-red-400 hover:underline"
+          >
+            Delete project
+          </button>
+        </div>
       </div>
 
-      <p className="mt-2 text-xs text-[var(--muted)]" aria-live="polite">
-        Tracks from API: {tracks.length} — if this doesn’t match Supabase, check Vercel env (SUPABASE_URL, SUPABASE_SECRET_KEY); open <a href="/api/debug/tracks-total" target="_blank" rel="noopener noreferrer" className="underline">/api/debug/tracks-total</a> to see if the server sees any rows (response headers here include X-Tracks-Table-Total).
-      </p>
-      {tracks.length > 0 && lastTracksResponseRef.current.length === 0 && (
-        <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-          List may be out of sync with server (API returned 0). Use Hard Refresh to re-check.
-        </p>
+      {isDev && (
+        <>
+          <p className="mt-2 text-xs text-[var(--muted)]" aria-live="polite">
+            Tracks from API: {tracks.length} — <a href="/api/debug/tracks-total" target="_blank" rel="noopener noreferrer" className="underline">debug</a>
+          </p>
+          {tracks.length > 0 && lastTracksResponseRef.current.length === 0 && (
+            <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+              List may be out of sync. Use Refresh to re-check.
+            </p>
+          )}
+          <details className="mt-4 rounded border border-[var(--border)] bg-[var(--surface)] p-3 text-left">
+            <summary className="cursor-pointer text-xs font-medium text-[var(--muted)]">Debug: projectId, API count, raw response</summary>
+            <div className="mt-2 space-y-1 text-xs text-[var(--muted)]">
+              <p><strong>projectId:</strong> {id}</p>
+              <p><strong>count from API:</strong> {lastTracksResponseRef.current.length}</p>
+              <pre className="max-h-40 overflow-auto rounded bg-[var(--bg)] p-2 font-mono whitespace-pre-wrap break-all">
+                {JSON.stringify(lastTracksResponseRef.current, null, 2)}
+              </pre>
+            </div>
+          </details>
+        </>
       )}
-
-      <details className="mt-4 rounded border border-[var(--border)] bg-[var(--surface)] p-3 text-left">
-        <summary className="cursor-pointer text-xs font-medium text-[var(--muted)]">Debug: projectId, API count, raw response</summary>
-        <div className="mt-2 space-y-1 text-xs text-[var(--muted)]">
-          <p><strong>projectId:</strong> {id}</p>
-          <p><strong>count from API:</strong> {lastTracksResponseRef.current.length}</p>
-          <pre className="max-h-40 overflow-auto rounded bg-[var(--bg)] p-2 font-mono whitespace-pre-wrap break-all">
-            {JSON.stringify(lastTracksResponseRef.current, null, 2)}
-          </pre>
-        </div>
-      </details>
 
       {error && (
         <div className="mt-4 rounded border border-amber-500/50 bg-amber-500/10 px-4 py-2 text-sm text-amber-600 dark:text-amber-400">
@@ -362,30 +529,64 @@ export default function ProjectPage() {
         </button>
         {uploadStage && (
           <span className="text-xs text-[var(--muted)]">
-            Stage: {uploadStage}
+            {uploadStage}
           </span>
         )}
       </div>
 
-      <ul className="mt-8 space-y-4" data-source="supabase" data-track-count={tracks.filter((t) => t?.id).length}>
-        {tracks.filter((t) => t?.id).length === 0 ? (
+      {tracks.length > 0 && (
+        <div className="mt-6">
+          <label htmlFor="filter" className="block text-xs text-[var(--muted)] mb-1">
+            Filter tracks
+          </label>
+          <input
+            id="filter"
+            type="text"
+            value={filterQuery}
+            onChange={(e) => setFilterQuery(e.target.value)}
+            placeholder="Name, BPM, key, notes…"
+            className="w-full max-w-sm rounded border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-sm"
+          />
+          {filterQuery.trim() && (
+            <p className="mt-1 text-xs text-[var(--muted)]">
+              Showing {filteredTracks.filter((t) => t?.id).length} of {tracks.length} tracks
+            </p>
+          )}
+        </div>
+      )}
+
+      {loading ? (
+        <ul className="mt-8 space-y-4">
+          {[1, 2, 3].map((i) => (
+            <li key={i} className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
+              <div className="animate-pulse h-5 w-3/4 rounded bg-[var(--border)]" />
+              <div className="mt-3 h-12 w-full rounded bg-[var(--border)]" />
+              <div className="mt-3 flex gap-2">
+                <div className="h-8 w-16 rounded bg-[var(--border)]" />
+                <div className="h-8 w-20 rounded bg-[var(--border)]" />
+                <div className="h-8 w-24 rounded bg-[var(--border)]" />
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : (
+      <ul className="mt-8 space-y-4" data-source="supabase" data-track-count={filteredTracks.filter((t) => t?.id).length}>
+        {filteredTracks.filter((t) => t?.id).length === 0 ? (
           <>
             <li className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-6 text-center text-sm text-[var(--muted)]">
-              No tracks. Upload audio above.
+              {tracks.length === 0
+                ? 'No tracks. Upload audio above.'
+                : `No tracks match "${filterQuery.trim()}". Clear the filter or add tracks.`}
             </li>
-            <li className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-left text-sm text-amber-700 dark:text-amber-300">
-              <strong className="block mb-2">Tracks disappear after refresh?</strong>
-              The app only shows what the API returns. If you have tracks in Supabase but see 0 here, the server is likely using a <em>different Supabase project</em> than your dashboard.
-              <ol className="mt-2 list-decimal list-inside space-y-1">
-                <li>Open <a href="/api/debug/tracks-total" target="_blank" rel="noopener noreferrer" className="underline">/api/debug/tracks-total</a>. Check <code>total</code> and <code>supabaseHost</code>.</li>
-                <li>If <code>total</code> is 0: In <strong>Supabase</strong> dashboard → Settings → API, copy <strong>Project URL</strong> and the <strong>service_role</strong> secret.</li>
-                <li>In <strong>Vercel</strong> → Project → Settings → Environment Variables, set <code>SUPABASE_URL</code> and <code>SUPABASE_SECRET_KEY</code> to those exact values (Production).</li>
-                <li>Redeploy. Then refresh this page.</li>
-              </ol>
-            </li>
+            {tracks.length === 0 && isDev && (
+              <li className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-left text-sm text-amber-700 dark:text-amber-300">
+                <strong className="block mb-2">Tracks disappear after refresh?</strong>
+                <a href="/api/debug/tracks-total" target="_blank" rel="noopener noreferrer" className="underline">Check /api/debug/tracks-total</a> and Vercel env (SUPABASE_URL, SUPABASE_SECRET_KEY).
+              </li>
+            )}
           </>
         ) : (
-          tracks.filter((t) => t?.id).map((track) => {
+          filteredTracks.filter((t) => t?.id).map((track) => {
             const streamPath = track.file_path ?? (track as { storage_path?: string }).storage_path ?? '';
             const displayName = track.title ?? (track as { name?: string }).name ?? 'Track';
             const hasValidPath = streamPath.includes('/') && streamPath.length > 2;
@@ -403,13 +604,13 @@ export default function ProjectPage() {
                       className="w-full rounded border border-[var(--border)] bg-[var(--bg)] px-2 py-1 text-sm"
                       onBlur={(e) => {
                         const v = e.target.value.trim();
-                        if (v && v !== displayName) updateTrack(track.id, { name: v });
+                        if (v && v !== displayName) updateTrack(track.id, { name: v }, 'name');
                         setEditingTrack(null);
                       }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           const v = (e.target as HTMLInputElement).value.trim();
-                          if (v) updateTrack(track.id, { name: v });
+                          if (v) updateTrack(track.id, { name: v }, 'name');
                           setEditingTrack(null);
                         }
                       }}
@@ -446,8 +647,8 @@ export default function ProjectPage() {
               )}
 
               <div className="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
-                <div>
-                  <span className="text-[var(--muted)]">BPM </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[var(--muted)]">BPM</span>
                   <input
                     type="number"
                     min={1}
@@ -455,31 +656,40 @@ export default function ProjectPage() {
                     defaultValue={track.bpm ?? ''}
                     onBlur={(e) => {
                       const v = e.target.value ? parseInt(e.target.value, 10) : null;
-                      updateTrack(track.id, { bpm: v ?? undefined });
+                      updateTrack(track.id, { bpm: v ?? undefined }, 'bpm');
                     }}
                     placeholder="—"
                     className="w-16 rounded border border-[var(--border)] bg-[var(--bg)] px-2 py-1"
                   />
+                  {savedFeedback?.trackId === track.id && savedFeedback?.field === 'bpm' && (
+                    <span className="text-xs text-emerald-600 dark:text-emerald-400">Saved</span>
+                  )}
                 </div>
-                <div>
-                  <span className="text-[var(--muted)]">Key </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[var(--muted)]">Key</span>
                   <input
                     type="text"
                     defaultValue={track.key ?? ''}
-                    onBlur={(e) => updateTrack(track.id, { key: e.target.value.trim() || undefined })}
+                    onBlur={(e) => updateTrack(track.id, { key: e.target.value.trim() || undefined }, 'key')}
                     placeholder="e.g. Cm"
                     className="w-full rounded border border-[var(--border)] bg-[var(--bg)] px-2 py-1"
                   />
+                  {savedFeedback?.trackId === track.id && savedFeedback?.field === 'key' && (
+                    <span className="text-xs text-emerald-600 dark:text-emerald-400 shrink-0">Saved</span>
+                  )}
                 </div>
-                <div className="sm:col-span-1">
-                  <span className="text-[var(--muted)]">Notes </span>
+                <div className="sm:col-span-1 flex items-center gap-2">
+                  <span className="text-[var(--muted)]">Notes</span>
                   <input
                     type="text"
                     defaultValue={track.notes ?? ''}
-                    onBlur={(e) => updateTrack(track.id, { notes: e.target.value.trim() || undefined })}
+                    onBlur={(e) => updateTrack(track.id, { notes: e.target.value.trim() || undefined }, 'notes')}
                     placeholder="Notes"
                     className="w-full rounded border border-[var(--border)] bg-[var(--bg)] px-2 py-1"
                   />
+                  {savedFeedback?.trackId === track.id && savedFeedback?.field === 'notes' && (
+                    <span className="text-xs text-emerald-600 dark:text-emerald-400 shrink-0">Saved</span>
+                  )}
                 </div>
               </div>
             </li>
@@ -487,6 +697,7 @@ export default function ProjectPage() {
           })
         )}
       </ul>
+      )}
     </div>
   );
 }
