@@ -4,10 +4,11 @@ import { createServerSupabase, getSupabaseHost } from '@/lib/supabase-server';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
- * Single source of truth for track list. Supabase DB only; no static/cache.
- * GET /api/projects/[id]/tracks — folder is [id], so param key is params.id; always queries Supabase; never cached.
- * Audit headers: X-Tracks-Total, X-Recent-Project-Ids to confirm filtered query vs unfiltered visibility (RLS/projectId mismatch).
+ * Single source of truth: track list from Supabase via RPC get_tracks_for_project (SECURITY DEFINER bypasses RLS).
+ * GET /api/projects/[id]/tracks — folder [id]; param key params.id; validated as UUID.
  */
 export async function GET(
   _request: Request,
@@ -18,6 +19,12 @@ export async function GET(
     if (!projectId) {
       return NextResponse.json(
         { error: 'Project id is required' },
+        { status: 400 }
+      );
+    }
+    if (!UUID_REGEX.test(projectId)) {
+      return NextResponse.json(
+        { error: 'Invalid project id: must be a UUID' },
         { status: 400 }
       );
     }
@@ -39,15 +46,11 @@ export async function GET(
 
     const [
       { count: tracksTotal },
-      { data: filteredRows, error: filteredError },
+      { data: rpcRows, error: rpcError },
       { data: recentRows },
     ] = await Promise.all([
       supabase.from('tracks').select('*', { count: 'exact', head: true }),
-      supabase
-        .from('tracks')
-        .select('*')
-        .eq('project_id', projectId)
-        .order('created_at', { ascending: false }),
+      supabase.rpc('get_tracks_for_project', { p_project_id: projectId }),
       supabase
         .from('tracks')
         .select('project_id')
@@ -55,8 +58,8 @@ export async function GET(
         .limit(10),
     ]);
 
-    if (filteredError) throw filteredError;
-    const rows = (filteredRows ?? []) as Record<string, unknown>[];
+    if (rpcError) throw rpcError;
+    const rows = (Array.isArray(rpcRows) ? rpcRows : []) as Record<string, unknown>[];
     const total = tracksTotal ?? 0;
     const recentProjectIds = (recentRows ?? []).map((r: { project_id?: string }) => r?.project_id ?? '').filter(Boolean);
     const recentProjectIdsHeader = recentProjectIds.slice(0, 3).join(',');
