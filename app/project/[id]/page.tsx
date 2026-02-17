@@ -313,7 +313,7 @@ export default function ProjectPage() {
           </li>
         ) : (
           tracks.filter((t) => t?.id).map((track) => {
-            const streamPath = track.storage_path ?? (track as { file_path?: string }).file_path ?? '';
+            const streamPath = track.file_path ?? (track as { storage_path?: string }).storage_path ?? '';
             const displayName = track.title ?? (track as { name?: string }).name ?? 'Track';
             return (
             <li
