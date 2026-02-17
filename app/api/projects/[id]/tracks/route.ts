@@ -21,25 +21,8 @@ export async function GET(
         { status: 503 }
       );
     }
-    const BUCKET = 'music-files';
 
-    // List files in storage so we only show tracks that have a file (UI = directory of storage)
-    const { data: storageData, error: listError } = await supabase.storage
-      .from(BUCKET)
-      .list(projectId, { limit: 1000 });
-
-    let existingStoragePaths: Set<string> | null = null;
-    if (!listError && Array.isArray(storageData)) {
-      const fileNames = storageData.filter(
-        (item: { name?: string }) => typeof item.name === 'string' && !item.name.startsWith('.')
-      );
-      existingStoragePaths = new Set(
-        fileNames.map((item: { name: string }) =>
-          item.name.includes('/') ? item.name : `${projectId}/${item.name}`
-        )
-      );
-    }
-
+    // Read tracks directly from DB; we already insert only after successful upload.
     const { data, error } = await supabase
       .from('tracks')
       .select('*')
@@ -48,14 +31,7 @@ export async function GET(
 
     if (error) throw error;
     const rows = (data ?? []) as Record<string, unknown>[];
-    const withFile =
-      existingStoragePaths === null
-        ? rows
-        : rows.filter((row) => {
-            const path = (row.file_path ?? row.storage_path) as string | undefined;
-            return path && path.trim() !== '' && existingStoragePaths!.has(path);
-          });
-    const normalized = withFile.map((row) => ({
+    const normalized = rows.map((row) => ({
       ...row,
       name: row.title ?? row.name,
       storage_path: row.file_path ?? row.storage_path,
