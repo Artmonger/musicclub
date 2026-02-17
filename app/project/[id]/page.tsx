@@ -91,7 +91,7 @@ export default function ProjectPage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-12">
+    <div className="mx-auto max-w-2xl px-4 py-12" data-page="project">
       <Link href="/" className="text-sm text-[var(--muted)] hover:underline">
         ← Projects
       </Link>
@@ -105,7 +105,8 @@ export default function ProjectPage() {
         <button
           type="button"
           onClick={() => loadFromBackend()}
-          className="shrink-0 text-sm text-[var(--muted)] hover:underline"
+          className="shrink-0 rounded border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-sm text-[var(--muted)] hover:underline"
+          title="Reload project and tracks from Supabase"
         >
           Refresh from backend
         </button>
