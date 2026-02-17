@@ -10,7 +10,7 @@ export async function POST(request: Request) {
     if (!projectId || typeof projectId !== 'string') {
       return NextResponse.json({ error: 'projectId is required' }, { status: 400 });
     }
-    const name = [nameParam, title].find((n) => typeof n === 'string' && n.trim())?.trim() || 'Untitled';
+    const titleVal = [nameParam, title].find((n) => typeof n === 'string' && n.trim())?.trim() || 'Untitled';
 
     let supabase;
     try {
@@ -26,7 +26,7 @@ export async function POST(request: Request) {
     if (file_path && typeof file_path === 'string') {
       const { data: track, error } = await supabase
         .from('tracks')
-        .insert({ project_id: projectId, name, storage_path: file_path })
+        .insert({ project_id: projectId, title: titleVal, storage_path: file_path })
         .select()
         .single();
       if (error) {
@@ -39,7 +39,7 @@ export async function POST(request: Request) {
     // Create track without a file (manual "Add track")
     const { data: track, error } = await supabase
       .from('tracks')
-      .insert({ project_id: projectId, name, storage_path: null })
+      .insert({ project_id: projectId, title: titleVal, storage_path: null })
       .select()
       .single();
     if (error) {
@@ -72,7 +72,7 @@ export async function PATCH(request: Request) {
     if (typeof bpm === 'number') updates.bpm = bpm;
     if (typeof key === 'string') updates.key = key;
     if (typeof notes === 'string') updates.notes = notes;
-    if (typeof name === 'string') updates.name = name;
+    if (typeof name === 'string') updates.title = name;
 
     const { data, error } = await supabase
       .from('tracks')

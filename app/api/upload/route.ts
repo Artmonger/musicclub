@@ -62,7 +62,7 @@ export async function POST(request: Request) {
       .from('tracks')
       .insert({
         project_id: projectId,
-        name,
+        title: name,
         storage_path: storagePath,
       })
       .select()

@@ -36,7 +36,7 @@ export interface Database {
         Row: {
           id: string;
           project_id: string;
-          name: string;
+          title: string;
           storage_path: string | null;
           bpm: number | null;
           key: string | null;
@@ -47,7 +47,7 @@ export interface Database {
         Insert: {
           id?: string;
           project_id: string;
-          name: string;
+          title: string;
           storage_path?: string | null;
           bpm?: number | null;
           key?: string | null;
@@ -58,7 +58,7 @@ export interface Database {
         Update: {
           id?: string;
           project_id?: string;
-          name?: string;
+          title?: string;
           storage_path?: string;
           bpm?: number | null;
           key?: string | null;
