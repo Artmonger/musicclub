@@ -21,7 +21,9 @@ export function AudioPlayer({ streamUrlApi, trackName, onEnded, className = '' }
   const [duration, setDuration] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [isScrubbing, setIsScrubbing] = useState(false);
-  const [scrubPct, setScrubPct] = useState(0);
+  const [scrubPct, setScrubPct] = useState<number | null>(null);
+  const isScrubbingRef = useRef(false);
+  isScrubbingRef.current = isScrubbing;
 
   useEffect(() => {
     setError(null);
@@ -32,20 +34,26 @@ export function AudioPlayer({ streamUrlApi, trackName, onEnded, className = '' }
 
   useEffect(() => {
     if (!audio) return;
-    const onTimeUpdate = () => setCurrentTime(audio.currentTime);
-    const onDurationChange = () => setDuration(audio.duration);
+    const onLoadedMetadata = () => setDuration(audio.duration || 0);
+    const onTimeUpdate = () => {
+      if (!isScrubbingRef.current) setCurrentTime(audio.currentTime || 0);
+    };
+    const onDurationChange = () => setDuration(audio.duration || 0);
     const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
     const onEnd = () => {
       setPlaying(false);
+      setCurrentTime(audio.duration ?? 0);
       onEnded?.();
     };
+    audio.addEventListener('loadedmetadata', onLoadedMetadata);
     audio.addEventListener('timeupdate', onTimeUpdate);
     audio.addEventListener('durationchange', onDurationChange);
     audio.addEventListener('play', onPlay);
     audio.addEventListener('pause', onPause);
     audio.addEventListener('ended', onEnd);
     return () => {
+      audio.removeEventListener('loadedmetadata', onLoadedMetadata);
       audio.removeEventListener('timeupdate', onTimeUpdate);
       audio.removeEventListener('durationchange', onDurationChange);
       audio.removeEventListener('play', onPlay);
@@ -69,8 +77,10 @@ export function AudioPlayer({ streamUrlApi, trackName, onEnded, className = '' }
     if (!Number.isFinite(d) || d <= 0) return;
     const rect = bar.getBoundingClientRect();
     const pct = clamp((e.clientX - rect.left) / rect.width, 0, 1);
-    a.currentTime = pct * d;
+    const time = pct * d;
+    a.currentTime = time;
     setScrubPct(pct * 100);
+    setCurrentTime(time);
   }, []);
 
   const handlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
@@ -85,6 +95,7 @@ export function AudioPlayer({ streamUrlApi, trackName, onEnded, className = '' }
 
   const handlePointerUp = useCallback(() => {
     setIsScrubbing(false);
+    setScrubPct(null);
   }, []);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -107,8 +118,9 @@ export function AudioPlayer({ streamUrlApi, trackName, onEnded, className = '' }
     }
   }, [duration]);
 
-  const progressPct = isScrubbing ? scrubPct : (duration > 0 ? (currentTime / duration) * 100 : 0);
-  const displayTime = isScrubbing ? (scrubPct / 100) * duration : currentTime;
+  const playPct = duration > 0 ? (currentTime / duration) * 100 : 0;
+  const displayPct = clamp(scrubPct ?? playPct, 0, 100);
+  const displayTime = scrubPct != null ? (scrubPct / 100) * duration : currentTime;
 
   if (error) {
     return (
@@ -178,7 +190,7 @@ export function AudioPlayer({ streamUrlApi, trackName, onEnded, className = '' }
           >
             <div
               className="h-full rounded-full bg-[var(--muted)] transition-all pointer-events-none"
-              style={{ width: `${progressPct}%` }}
+              style={{ width: `${displayPct}%` }}
             />
           </div>
           <div className="mt-1 flex justify-between text-xs text-[var(--muted)]">
