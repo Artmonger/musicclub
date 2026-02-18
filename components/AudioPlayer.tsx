@@ -95,7 +95,6 @@ export function AudioPlayer({ streamUrlApi, trackName, onEnded, className = '' }
         />
       )}
       {loading && <p className="text-sm text-[var(--muted)]">Loading…</p>}
-      <p className="mb-2 truncate text-sm font-medium">{trackName}</p>
       <div className="flex items-center gap-3">
         <button
           type="button"
@@ -118,7 +117,7 @@ export function AudioPlayer({ streamUrlApi, trackName, onEnded, className = '' }
           <div
             role="progressbar"
             tabIndex={0}
-            className="h-1.5 cursor-pointer rounded-full bg-[var(--border)]"
+            className="h-2 cursor-pointer rounded-full bg-[var(--border)] hover:bg-[var(--muted)]/50 transition-colors"
             onClick={seek}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
@@ -126,6 +125,7 @@ export function AudioPlayer({ streamUrlApi, trackName, onEnded, className = '' }
                 seek(e as unknown as React.MouseEvent<HTMLDivElement>);
               }
             }}
+            title="Click to seek"
           >
             <div
               className="h-full rounded-full bg-[var(--muted)] transition-all"
