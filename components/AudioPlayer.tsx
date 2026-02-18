@@ -1,6 +1,8 @@
 'use client';
 
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
+
+const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
 
 interface AudioPlayerProps {
   /** Only URL the browser should request: /api/stream?path=<storagePath>. Server redirects to signed Supabase URL. */
@@ -12,11 +14,14 @@ interface AudioPlayerProps {
 
 export function AudioPlayer({ streamUrlApi, trackName, onEnded, className = '' }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
+  const barRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [isScrubbing, setIsScrubbing] = useState(false);
+  const [scrubPct, setScrubPct] = useState(0);
 
   useEffect(() => {
     setError(null);
@@ -56,12 +61,54 @@ export function AudioPlayer({ streamUrlApi, trackName, onEnded, className = '' }
     return `${m}:${sec.toString().padStart(2, '0')}`;
   };
 
-  const seek = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!audio || !duration) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / rect.width;
-    audio.currentTime = x * duration;
-  };
+  const seekFromEvent = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const bar = barRef.current;
+    const a = audioRef.current;
+    if (!bar || !a) return;
+    const d = a.duration;
+    if (!Number.isFinite(d) || d <= 0) return;
+    const rect = bar.getBoundingClientRect();
+    const pct = clamp((e.clientX - rect.left) / rect.width, 0, 1);
+    a.currentTime = pct * d;
+    setScrubPct(pct * 100);
+  }, []);
+
+  const handlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    setIsScrubbing(true);
+    seekFromEvent(e);
+    barRef.current?.setPointerCapture(e.pointerId);
+  }, [seekFromEvent]);
+
+  const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.buttons !== 0) seekFromEvent(e);
+  }, [seekFromEvent]);
+
+  const handlePointerUp = useCallback(() => {
+    setIsScrubbing(false);
+  }, []);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    const a = audioRef.current;
+    if (!a || !Number.isFinite(duration) || duration <= 0) return;
+    const step = e.shiftKey ? 15 : 5;
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      a.currentTime = clamp(a.currentTime - step, 0, duration);
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      a.currentTime = clamp(a.currentTime + step, 0, duration);
+    } else if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      if (barRef.current) {
+        const rect = barRef.current.getBoundingClientRect();
+        const pct = 0.5;
+        a.currentTime = pct * duration;
+      }
+    }
+  }, [duration]);
+
+  const progressPct = isScrubbing ? scrubPct : (duration > 0 ? (currentTime / duration) * 100 : 0);
+  const displayTime = isScrubbing ? (scrubPct / 100) * duration : currentTime;
 
   if (error) {
     return (
@@ -115,25 +162,27 @@ export function AudioPlayer({ streamUrlApi, trackName, onEnded, className = '' }
         </button>
         <div className="min-w-0 flex-1">
           <div
+            ref={barRef}
             role="progressbar"
             tabIndex={0}
-            className="h-2 cursor-pointer rounded-full bg-[var(--border)] hover:bg-[var(--muted)]/50 transition-colors"
-            onClick={seek}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                seek(e as unknown as React.MouseEvent<HTMLDivElement>);
-              }
-            }}
-            title="Click to seek"
+            aria-valuenow={duration > 0 ? currentTime : 0}
+            aria-valuemin={0}
+            aria-valuemax={duration > 0 ? duration : 0}
+            className="h-2 cursor-pointer rounded-full bg-[var(--border)] hover:bg-[var(--muted)]/50 transition-colors touch-none"
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
+            onKeyDown={handleKeyDown}
+            title="Click or drag to seek"
           >
             <div
-              className="h-full rounded-full bg-[var(--muted)] transition-all"
-              style={{ width: duration ? `${(currentTime / duration) * 100}%` : '0%' }}
+              className="h-full rounded-full bg-[var(--muted)] transition-all pointer-events-none"
+              style={{ width: `${progressPct}%` }}
             />
           </div>
           <div className="mt-1 flex justify-between text-xs text-[var(--muted)]">
-            <span>{formatTime(currentTime)}</span>
+            <span>{formatTime(displayTime)}</span>
             <span>{formatTime(duration)}</span>
           </div>
         </div>
