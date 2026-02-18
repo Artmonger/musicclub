@@ -244,7 +244,18 @@ export default function ProjectPage() {
                       {displayName}
                     </button>
                   )}
-                  <button type="button" onClick={() => deleteTrack(track.id)} className="shrink-0 text-xs text-[var(--muted)] hover:text-red-400">Delete</button>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {hasValidPath && (
+                      <a
+                        href={`/api/stream?path=${encodeURIComponent(streamPath)}&download=1&filename=${encodeURIComponent(displayName)}`}
+                        download
+                        className="text-xs text-[var(--muted)] hover:underline"
+                      >
+                        Download
+                      </a>
+                    )}
+                    <button type="button" onClick={() => deleteTrack(track.id)} className="text-xs text-[var(--muted)] hover:text-red-400">Delete</button>
+                  </div>
                 </div>
                 {hasValidPath ? (
                   <AudioPlayer streamUrlApi={`/api/stream?path=${encodeURIComponent(streamPath)}`} trackName={displayName} />
