@@ -20,6 +20,7 @@ export default function ProjectPage() {
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [filterQuery, setFilterQuery] = useState('');
+  const [editingTrackId, setEditingTrackId] = useState<string | null>(null);
 
   async function loadAll() {
     if (!id) return;
@@ -110,6 +111,21 @@ export default function ProjectPage() {
       setError(err instanceof Error ? err.message : 'Upload failed');
     } finally {
       setUploading(false);
+    }
+  };
+
+  const updateTrackName = async (trackId: string, name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const res = await fetch('/api/tracks', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: trackId, name: trimmed }),
+      cache: 'no-store',
+    });
+    if (res.ok) {
+      await reloadTracks();
+      setEditingTrackId(null);
     }
   };
 
@@ -222,8 +238,32 @@ export default function ProjectPage() {
             return (
               <li key={track.id} className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
                 <div className="mb-3 flex items-start justify-between gap-2">
-                  <span className="font-medium">{displayName}</span>
-                  <button type="button" onClick={() => deleteTrack(track.id)} className="text-xs text-[var(--muted)] hover:text-red-400">Delete</button>
+                  {editingTrackId === track.id ? (
+                    <input
+                      type="text"
+                      defaultValue={displayName}
+                      className="min-w-0 flex-1 rounded border border-[var(--border)] bg-[var(--bg)] px-2 py-1 text-sm font-medium"
+                      onBlur={(e) => {
+                        const v = e.target.value.trim();
+                        if (v && v !== displayName) updateTrackName(track.id, v);
+                        setEditingTrackId(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          const v = (e.target as HTMLInputElement).value.trim();
+                          if (v) updateTrackName(track.id, v);
+                          setEditingTrackId(null);
+                        }
+                        if (e.key === 'Escape') setEditingTrackId(null);
+                      }}
+                      autoFocus
+                    />
+                  ) : (
+                    <button type="button" onClick={() => setEditingTrackId(track.id)} className="text-left font-medium hover:underline">
+                      {displayName}
+                    </button>
+                  )}
+                  <button type="button" onClick={() => deleteTrack(track.id)} className="shrink-0 text-xs text-[var(--muted)] hover:text-red-400">Delete</button>
                 </div>
                 {hasValidPath ? (
                   <AudioPlayer streamUrlApi={`/api/stream?path=${encodeURIComponent(streamPath)}`} trackName={displayName} />
