@@ -247,7 +247,7 @@ export default function ProjectPage() {
                   <div className="flex shrink-0 items-center gap-2">
                     {hasValidPath && (
                       <a
-                        href={`/api/stream?path=${encodeURIComponent(streamPath)}&download=1&filename=${encodeURIComponent(displayName)}`}
+                        href={`/api/download?path=${encodeURIComponent(streamPath)}`}
                         download
                         className="text-xs text-[var(--muted)] hover:underline"
                       >
