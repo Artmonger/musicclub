@@ -19,7 +19,6 @@ export default function ProjectPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [filterQuery, setFilterQuery] = useState('');
   const [editingTrackId, setEditingTrackId] = useState<string | null>(null);
 
   async function loadAll() {
@@ -147,17 +146,6 @@ export default function ProjectPage() {
     if (res.ok) router.push('/');
   };
 
-  const filteredTracks = filterQuery.trim()
-    ? tracks.filter((t) => {
-        const q = filterQuery.toLowerCase();
-        const name = (t.title ?? (t as { name?: string }).name ?? '').toLowerCase();
-        const key = (t.key ?? '').toLowerCase();
-        const notes = (t.notes ?? '').toLowerCase();
-        const bpm = String(t.bpm ?? '');
-        return name.includes(q) || key.includes(q) || notes.includes(q) || bpm.includes(q);
-      })
-    : tracks;
-
   if (!id) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-12">
@@ -218,20 +206,13 @@ export default function ProjectPage() {
         </button>
       </div>
 
-      {tracks.length > 0 && (
-        <div className="mt-6">
-          <label htmlFor="filter" className="block text-xs text-[var(--muted)] mb-1">Filter tracks</label>
-          <input id="filter" type="text" value={filterQuery} onChange={(e) => setFilterQuery(e.target.value)} placeholder="Name, BPM, key, notes…" className="w-full max-w-sm rounded border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-sm" />
-        </div>
-      )}
-
       <ul className="mt-8 space-y-4">
-        {filteredTracks.length === 0 ? (
+        {tracks.length === 0 ? (
           <li className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-6 text-center text-sm text-[var(--muted)]">
-            {tracks.length === 0 ? 'No tracks. Upload audio above.' : `No tracks match "${filterQuery.trim()}".`}
+            No tracks. Upload audio above.
           </li>
         ) : (
-          filteredTracks.map((track) => {
+          tracks.map((track) => {
             const streamPath = track.file_path ?? (track as { storage_path?: string }).storage_path ?? '';
             const displayName = track.title ?? (track as { name?: string }).name ?? 'Track';
             const hasValidPath = streamPath.length > 2;
