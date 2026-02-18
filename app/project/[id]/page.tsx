@@ -28,6 +28,7 @@ export default function ProjectPage() {
   const [projectDescInput, setProjectDescInput] = useState('');
   const [error, setError] = useState<string | null>(null);
   const lastTracksResponseRef = useRef<unknown[]>([]);
+  const tracksLoadIdRef = useRef(0);
 
   useEffect(() => {
     if (savedFeedback) {
@@ -48,8 +49,8 @@ export default function ProjectPage() {
     }
   }, [id]);
 
-  /** Fetches tracks from API, updates state, returns the list. Supabase GET is the single source of truth; state is always set from the response. */
-  const fetchTracks = useCallback(async (): Promise<Track[]> => {
+  /** Fetches tracks from API. Only updates state if still the latest load (ignore stale/cached responses). */
+  const fetchTracks = useCallback(async (loadId: number): Promise<Track[]> => {
     if (!id) return [];
     const url = `/api/projects/${id}/tracks?t=${Date.now()}&_=${Math.random().toString(36).slice(2)}`;
     const res = await fetch(url, {
@@ -66,8 +67,9 @@ export default function ProjectPage() {
       else if (Array.isArray((raw as { data?: unknown }).data)) list = (raw as { data: unknown[] }).data;
       else if (Array.isArray((raw as { rows?: unknown }).rows)) list = (raw as { rows: unknown[] }).rows;
     }
-    console.log('[fetchTracks] response shape=%s parsed length=%s', JSON.stringify(shape), list.length);
+    console.log('[fetchTracks] loadId=%s response length=%s', loadId, list.length);
     lastTracksResponseRef.current = list;
+    if (tracksLoadIdRef.current !== loadId) return list as Track[];
     if (res.ok) {
       setTracks(list as Track[]);
       setError(null);
@@ -78,12 +80,16 @@ export default function ProjectPage() {
     return [];
   }, [id]);
 
-  /** Hard refresh: clear in-memory state and re-fetch project + tracks from Supabase only. No retry on empty — avoids a delayed cached response overwriting correct []. */
+  /** Hard refresh: clear state, bump load id, fetch. Only the latest response updates tracks (stale/cached responses ignored). */
   const loadFromBackend = useCallback(() => {
+    tracksLoadIdRef.current += 1;
+    const loadId = tracksLoadIdRef.current;
     setTracks([]);
     setError(null);
     setLoading(true);
-    Promise.all([fetchProject(), fetchTracks()]).finally(() => setLoading(false));
+    Promise.all([fetchProject(), fetchTracks(loadId)]).finally(() => {
+      if (tracksLoadIdRef.current === loadId) setLoading(false);
+    });
   }, [fetchProject, fetchTracks]);
 
   useEffect(() => {
@@ -192,10 +198,10 @@ export default function ProjectPage() {
                 // Fallback path: the API already created the track + storage object. Re-fetch from Supabase and render.
                 setUploadStage(`saving: ${file.name}`);
                 await new Promise((r) => setTimeout(r, 400));
-                let list = await fetchTracks();
+                let list = await fetchTracks(++tracksLoadIdRef.current);
                 for (let retry = 0; retry < 2 && list.length === 0; retry++) {
                   await new Promise((r) => setTimeout(r, 1000));
-                  list = await fetchTracks();
+                  list = await fetchTracks(++tracksLoadIdRef.current);
                 }
                 setUploadStage(`done: ${file.name}`);
                 continue;
@@ -234,10 +240,10 @@ export default function ProjectPage() {
             // Re-fetch from Supabase and render exactly what the GET endpoint returns (same projectId as route).
             setUploadStage(`done: ${file.name}`);
             await new Promise((r) => setTimeout(r, 400));
-            let list = await fetchTracks();
+            let list = await fetchTracks(++tracksLoadIdRef.current);
             for (let retry = 0; retry < 2 && list.length === 0; retry++) {
               await new Promise((r) => setTimeout(r, 1000));
-              list = await fetchTracks();
+              list = await fetchTracks(++tracksLoadIdRef.current);
             }
           } catch (fileErr) {
             console.error('[upload] file failed', file.name, fileErr);
@@ -269,7 +275,7 @@ export default function ProjectPage() {
       cache: 'no-store',
     });
     if (res.ok) {
-      await fetchTracks();
+      await fetchTracks(++tracksLoadIdRef.current);
       setEditingTrack(null);
       if (field) setSavedFeedback({ trackId, field });
     }
@@ -321,7 +327,7 @@ export default function ProjectPage() {
   const deleteTrack = async (trackId: string) => {
     if (!confirm('Delete this track?')) return;
     const res = await fetch(`/api/tracks?id=${trackId}`, { method: 'DELETE', cache: 'no-store' });
-    if (res.ok) await fetchTracks();
+    if (res.ok) await fetchTracks(++tracksLoadIdRef.current);
   };
 
   useEffect(() => {

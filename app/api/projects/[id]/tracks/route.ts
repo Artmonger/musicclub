@@ -72,9 +72,11 @@ export async function GET(
     }));
 
     const headers: Record<string, string> = {
-      'Cache-Control': 'no-store, no-cache, max-age=0, must-revalidate',
+      'Cache-Control': 'no-store, no-cache, max-age=0, must-revalidate, private',
       Pragma: 'no-cache',
       Expires: '0',
+      'CDN-Cache-Control': 'no-store',
+      'Vercel-CDN-Cache-Control': 'no-store',
       'X-Project-Id': projectId,
       'X-Track-Count': String(normalized.length),
       'X-Tracks-Total': String(total),
