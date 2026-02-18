@@ -46,12 +46,22 @@ export function AudioPlayer({ streamUrlApi, trackName, onEnded, className = '' }
       setCurrentTime(audio.duration ?? 0);
       onEnded?.();
     };
+    const onError = () => console.log('[AudioPlayer] error', audio.error?.code, audio.error?.message);
+    const onStalled = () => console.log('[AudioPlayer] stalled');
+    const onWaiting = () => console.log('[AudioPlayer] waiting');
+    const onCanPlay = () => console.log('[AudioPlayer] canplay');
+    const onCanPlayThrough = () => console.log('[AudioPlayer] canplaythrough');
     audio.addEventListener('loadedmetadata', onLoadedMetadata);
     audio.addEventListener('timeupdate', onTimeUpdate);
     audio.addEventListener('durationchange', onDurationChange);
     audio.addEventListener('play', onPlay);
     audio.addEventListener('pause', onPause);
     audio.addEventListener('ended', onEnd);
+    audio.addEventListener('error', onError);
+    audio.addEventListener('stalled', onStalled);
+    audio.addEventListener('waiting', onWaiting);
+    audio.addEventListener('canplay', onCanPlay);
+    audio.addEventListener('canplaythrough', onCanPlayThrough);
     return () => {
       audio.removeEventListener('loadedmetadata', onLoadedMetadata);
       audio.removeEventListener('timeupdate', onTimeUpdate);
@@ -59,6 +69,11 @@ export function AudioPlayer({ streamUrlApi, trackName, onEnded, className = '' }
       audio.removeEventListener('play', onPlay);
       audio.removeEventListener('pause', onPause);
       audio.removeEventListener('ended', onEnd);
+      audio.removeEventListener('error', onError);
+      audio.removeEventListener('stalled', onStalled);
+      audio.removeEventListener('waiting', onWaiting);
+      audio.removeEventListener('canplay', onCanPlay);
+      audio.removeEventListener('canplaythrough', onCanPlayThrough);
     };
   }, [audio, onEnded]);
 
@@ -131,7 +146,7 @@ export function AudioPlayer({ streamUrlApi, trackName, onEnded, className = '' }
           onClick={() => { setError(null); setLoading(true); }}
           className="mt-2 text-sm text-[var(--accent)] hover:underline"
         >
-          Retry
+          Tap play again
         </button>
       </div>
     );
@@ -144,12 +159,14 @@ export function AudioPlayer({ streamUrlApi, trackName, onEnded, className = '' }
           ref={audioRef}
           src={streamUrlApi}
           preload="metadata"
+          playsInline
           onLoadStart={() => setLoading(true)}
           onCanPlay={() => setLoading(false)}
           onLoadedData={() => setLoading(false)}
           onError={() => {
             setLoading(false);
-            setError('Failed to load audio');
+            const code = audioRef.current?.error?.code;
+            setError(code != null ? `Error ${code}. Tap play again.` : 'Failed to load audio. Tap play again.');
           }}
         />
       )}

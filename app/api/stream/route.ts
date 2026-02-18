@@ -36,12 +36,18 @@ function normalizeStreamPath(raw: string): string | null {
  * Stream: redirect to a short-lived signed URL. Browser should ONLY request /api/stream?path=<storagePath>.
  * path must be object path only: projectId/filename (never full URL, never music-files/ prefix).
  */
+function safeFilename(name: string): string {
+  const base = name.replace(/[^\w.\-]/g, '_').slice(0, 200) || 'audio';
+  return base.endsWith('.mp3') || base.endsWith('.wav') || base.endsWith('.m4a') ? base : `${base}.mp3`;
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const rawPath = searchParams.get('path')?.trim() ?? '';
     const path = normalizeStreamPath(rawPath);
     const expiresIn = 3600;
+    const isDownload = searchParams.get('download') === '1' || searchParams.get('download') === 'true';
 
     if (!path) {
       return NextResponse.json(
@@ -82,12 +88,52 @@ export async function GET(request: Request) {
     } catch {
       signedHost = '(parse failed)';
     }
-    console.log('[stream] path=%s signedHost=%s', path, signedHost);
+    console.log('[stream] path=%s signedHost=%s download=%s', path, signedHost, isDownload);
 
-    return NextResponse.redirect(signedUrl, {
-      status: 302,
-      headers: { 'Cache-Control': 'no-store, no-cache, max-age=0, must-revalidate' },
-    });
+    if (isDownload) {
+      const res = await fetch(signedUrl);
+      if (!res.ok) {
+        return NextResponse.json({ error: 'Failed to fetch file for download' }, { status: 502 });
+      }
+      const suggestedName = searchParams.get('filename')?.trim();
+      const filename = safeFilename(suggestedName || path.split('/').pop() || 'audio');
+      return new NextResponse(res.body, {
+        headers: {
+          'Content-Disposition': `attachment; filename="${filename}"`,
+          'Content-Type': res.headers.get('content-type') || 'application/octet-stream',
+          'Cache-Control': 'no-store, no-cache, max-age=0, must-revalidate',
+        },
+      });
+    }
+
+    // Stream with Range support for mobile Safari (206 Partial Content)
+    const rangeHeader = request.headers.get('range') ?? '';
+    const hasRange = /^bytes=/.test(rangeHeader);
+    const fetchHeaders: HeadersInit = {};
+    if (hasRange) fetchHeaders['Range'] = rangeHeader;
+
+    const upstream = await fetch(signedUrl, { headers: fetchHeaders });
+    if (!upstream.ok && upstream.status !== 206) {
+      console.error('[stream] upstream error path=%s status=%s', path, upstream.status);
+      return NextResponse.json({ error: 'Failed to stream file' }, { status: 502 });
+    }
+
+    const contentType = upstream.headers.get('content-type') || 'application/octet-stream';
+    const contentRange = upstream.headers.get('content-range');
+    const contentLength = upstream.headers.get('content-length');
+    const status = upstream.status;
+    console.log('[stream] path=%s hasRange=%s upstreamStatus=%s contentRange=%s contentLength=%s contentType=%s',
+      path, hasRange, status, contentRange ?? '(none)', contentLength ?? '(none)', contentType);
+
+    const headers: Record<string, string> = {
+      'Accept-Ranges': 'bytes',
+      'Content-Type': contentType,
+      'Cache-Control': 'no-store, no-cache, max-age=0, must-revalidate',
+    };
+    if (contentRange) headers['Content-Range'] = contentRange;
+    if (contentLength) headers['Content-Length'] = contentLength;
+
+    return new NextResponse(upstream.body, { status, headers });
   } catch (err) {
     console.error('Stream signed URL:', err);
     return NextResponse.json(
