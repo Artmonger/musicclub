@@ -1,9 +1,19 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { AudioPlayer } from '@/components/AudioPlayer';
+import {
+  DndContext,
+  closestCenter,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  arrayMove,
+} from '@dnd-kit/sortable';
+import { SortableTrackRow } from '@/components/SortableTrackRow';
 import type { Project } from '@/types/database';
 import type { Track } from '@/types/database';
 
@@ -16,10 +26,22 @@ export default function ProjectPage() {
 
   const [project, setProject] = useState<Project | null>(null);
   const [tracks, setTracks] = useState<Track[]>([]);
+  const [orderedIds, setOrderedIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [editingTrackId, setEditingTrackId] = useState<string | null>(null);
+
+  // Sync orderedIds when tracks change: preserve order, append new, remove deleted
+  useEffect(() => {
+    const trackIds = new Set(tracks.map((t) => t.id));
+    setOrderedIds((prev) => {
+      if (prev.length === 0) return tracks.map((t) => t.id);
+      const kept = prev.filter((id) => trackIds.has(id));
+      const newIds = tracks.map((t) => t.id).filter((id) => !prev.includes(id));
+      return [...kept, ...newIds];
+    });
+  }, [tracks]);
 
   async function loadAll() {
     if (!id) return;
@@ -134,16 +156,31 @@ export default function ProjectPage() {
     if (res.ok) await reloadTracks();
   };
 
-  const clearAllTracks = async () => {
-    if (!confirm('Remove all tracks from this project?')) return;
-    const res = await fetch(`/api/projects/${id}/tracks`, { method: 'DELETE', cache: 'no-store' });
-    if (res.ok) await reloadTracks();
-  };
-
   const deleteProject = async () => {
     if (!confirm('Delete this project and all its tracks?')) return;
     const res = await fetch(`/api/projects/${id}`, { method: 'DELETE', cache: 'no-store' });
     if (res.ok) router.push('/');
+  };
+
+  const tracksById = useMemo(() => {
+    const map: Record<string, Track> = {};
+    tracks.forEach((t) => { map[t.id] = t; });
+    return map;
+  }, [tracks]);
+  const orderedTracks = useMemo(
+    () => orderedIds.map((tid) => tracksById[tid]).filter(Boolean) as Track[],
+    [orderedIds, tracksById]
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      const oldIndex = orderedIds.indexOf(active.id as string);
+      const newIndex = orderedIds.indexOf(over.id as string);
+      if (oldIndex !== -1 && newIndex !== -1) {
+        setOrderedIds(arrayMove(orderedIds, oldIndex, newIndex));
+      }
+    }
   };
 
   if (!id) {
@@ -171,8 +208,7 @@ export default function ProjectPage() {
     return (
       <div className="mx-auto max-w-2xl px-4 py-12">
         <p className="text-red-400">{error || 'Project not found'}</p>
-        <button type="button" onClick={() => loadAll()} className="mt-4 rounded border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-sm hover:underline">Refresh</button>
-        <Link href="/" className="ml-3 text-sm text-[var(--muted)] hover:underline">← Projects</Link>
+        <Link href="/" className="mt-4 inline-block text-sm text-[var(--muted)] hover:underline">← Projects</Link>
       </div>
     );
   }
@@ -186,8 +222,6 @@ export default function ProjectPage() {
           {project.description && <p className="mt-1 text-sm text-[var(--muted)]">{project.description}</p>}
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button type="button" onClick={() => loadAll()} className="rounded border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-sm text-[var(--muted)] hover:underline">Refresh</button>
-          <button type="button" onClick={clearAllTracks} disabled={tracks.length === 0} className="rounded border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-sm text-[var(--muted)] hover:underline disabled:opacity-50">Clear all tracks</button>
           <button type="button" onClick={deleteProject} className="rounded border border-red-500/50 bg-red-500/10 px-3 py-1.5 text-sm text-red-600 dark:text-red-400 hover:underline">Delete project</button>
         </div>
       </div>
@@ -212,59 +246,20 @@ export default function ProjectPage() {
             No tracks. Upload audio above.
           </li>
         ) : (
-          tracks.map((track) => {
-            const streamPath = track.file_path ?? (track as { storage_path?: string }).storage_path ?? '';
-            const displayName = track.title ?? (track as { name?: string }).name ?? 'Track';
-            const hasValidPath = streamPath.length > 2;
-            return (
-              <li key={track.id} className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
-                <div className="mb-3 flex items-start justify-between gap-2">
-                  {editingTrackId === track.id ? (
-                    <input
-                      type="text"
-                      defaultValue={displayName}
-                      className="min-w-0 flex-1 rounded border border-[var(--border)] bg-[var(--bg)] px-2 py-1 text-sm font-medium"
-                      onBlur={(e) => {
-                        const v = e.target.value.trim();
-                        if (v && v !== displayName) updateTrackName(track.id, v);
-                        setEditingTrackId(null);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          const v = (e.target as HTMLInputElement).value.trim();
-                          if (v) updateTrackName(track.id, v);
-                          setEditingTrackId(null);
-                        }
-                        if (e.key === 'Escape') setEditingTrackId(null);
-                      }}
-                      autoFocus
-                    />
-                  ) : (
-                    <button type="button" onClick={() => setEditingTrackId(track.id)} className="text-left font-medium hover:underline">
-                      {displayName}
-                    </button>
-                  )}
-                  <div className="flex shrink-0 items-center gap-2">
-                    {hasValidPath && (
-                      <a
-                        href={`/api/download?path=${encodeURIComponent(streamPath)}`}
-                        download
-                        className="text-xs text-[var(--muted)] hover:underline"
-                      >
-                        Download
-                      </a>
-                    )}
-                    <button type="button" onClick={() => deleteTrack(track.id)} className="text-xs text-[var(--muted)] hover:text-red-400">Delete</button>
-                  </div>
-                </div>
-                {hasValidPath ? (
-                  <AudioPlayer streamUrlApi={`/api/stream?path=${encodeURIComponent(streamPath)}`} trackName={displayName} />
-                ) : (
-                  <p className="text-sm text-amber-500">File path missing.</p>
-                )}
-              </li>
-            );
-          })
+          <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={orderedIds} strategy={verticalListSortingStrategy}>
+              {orderedTracks.map((track) => (
+                <SortableTrackRow
+                  key={track.id}
+                  track={track}
+                  editingTrackId={editingTrackId}
+                  setEditingTrackId={setEditingTrackId}
+                  onUpdateName={updateTrackName}
+                  onDelete={deleteTrack}
+                />
+              ))}
+            </SortableContext>
+          </DndContext>
         )}
       </ul>
     </div>
