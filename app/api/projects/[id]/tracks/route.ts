@@ -44,12 +44,35 @@ export async function GET(
     const hasSecretKey = Boolean(process.env.SUPABASE_SECRET_KEY?.trim());
     console.log('[tracks GET] projectId=%s supabaseHost=%s hasSecretKey=%s', projectId, host ?? '(none)', hasSecretKey);
 
+    const { count: tableTotal } = await supabase
+      .from('tracks')
+      .select('*', { count: 'exact', head: true });
+
+    const total = tableTotal ?? 0;
+    if (total === 0) {
+      const headers: Record<string, string> = {
+        'Cache-Control': 'no-store, no-cache, max-age=0, must-revalidate, private',
+        Pragma: 'no-cache',
+        Expires: '0',
+        'X-Project-Id': projectId,
+        'X-Track-Count': '0',
+        'X-Tracks-Total': '0',
+        'X-Tracks-Table-Total': '0',
+        'X-Supabase-Host': host ?? '',
+      };
+      return NextResponse.json([], { headers });
+    }
+
     const [
-      { count: tracksTotal },
+      { data: directRows, error: directError },
       { data: rpcRows, error: rpcError },
       { data: recentRows },
     ] = await Promise.all([
-      supabase.from('tracks').select('*', { count: 'exact', head: true }),
+      supabase
+        .from('tracks')
+        .select('*')
+        .eq('project_id', projectId)
+        .order('created_at', { ascending: false }),
       supabase.rpc('get_tracks_for_project', { p_project_id: projectId }),
       supabase
         .from('tracks')
@@ -58,9 +81,17 @@ export async function GET(
         .limit(10),
     ]);
 
+    const directList = (Array.isArray(directRows) ? directRows : []) as Record<string, unknown>[];
+    const rpcList = (Array.isArray(rpcRows) ? rpcRows : []) as Record<string, unknown>[];
+    const rows =
+      directList.length > 0
+        ? directList
+        : rpcList;
+    if (directList.length === 0 && rpcList.length > 0) {
+      console.warn('[tracks GET] direct query returned 0 but RPC returned %d; using RPC', rpcList.length);
+    }
+    if (directError) console.warn('[tracks GET] direct query error:', directError);
     if (rpcError) throw rpcError;
-    const rows = (Array.isArray(rpcRows) ? rpcRows : []) as Record<string, unknown>[];
-    const tableTotal = tracksTotal ?? 0;
     const recentProjectIds = (recentRows ?? []).map((r: { project_id?: string }) => r?.project_id ?? '').filter(Boolean);
     const recentProjectIdsHeader = recentProjectIds.slice(0, 3).join(',');
 
@@ -80,7 +111,7 @@ export async function GET(
       'X-Project-Id': projectId,
       'X-Track-Count': String(normalized.length),
       'X-Tracks-Total': String(normalized.length),
-      'X-Tracks-Table-Total': String(tableTotal),
+      'X-Tracks-Table-Total': String(total),
       'X-Recent-Project-Ids': recentProjectIdsHeader,
       'X-Supabase-Host': host ?? '',
     };
