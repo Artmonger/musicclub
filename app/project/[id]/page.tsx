@@ -17,6 +17,27 @@ import { SortableTrackRow } from '@/components/SortableTrackRow';
 import type { Project } from '@/types/database';
 import type { Track } from '@/types/database';
 
+const ORDER_KEY = (projectId: string) => `trackOrder:${projectId}`;
+
+function loadOrderFromStorage(projectId: string): string[] {
+  try {
+    const raw = localStorage.getItem(ORDER_KEY(projectId));
+    const saved = raw ? JSON.parse(raw) : [];
+    if (Array.isArray(saved) && saved.every((x) => typeof x === 'string')) return saved;
+  } catch {
+    /* localStorage unavailable or invalid */
+  }
+  return [];
+}
+
+function saveOrderToStorage(projectId: string, orderedIds: string[]) {
+  try {
+    localStorage.setItem(ORDER_KEY(projectId), JSON.stringify(orderedIds));
+  } catch {
+    /* ignore */
+  }
+}
+
 /** Single source of truth: GET /api/projects/[id] and GET /api/projects/[id]/tracks. */
 export default function ProjectPage() {
   const params = useParams();
@@ -32,13 +53,27 @@ export default function ProjectPage() {
   const [uploading, setUploading] = useState(false);
   const [editingTrackId, setEditingTrackId] = useState<string | null>(null);
 
-  // Sync orderedIds when tracks change: preserve order, append new, remove deleted
+  // Hydrate order from localStorage when project id is known (or clear when switching project)
   useEffect(() => {
-    const trackIds = new Set(tracks.map((t) => t.id));
+    if (!id) return;
+    setOrderedIds(loadOrderFromStorage(id));
+  }, [id]);
+
+  // Persist order whenever orderedIds changes
+  useEffect(() => {
+    if (!id) return;
+    saveOrderToStorage(id, orderedIds);
+  }, [id, orderedIds]);
+
+  // Reconcile orderedIds with fetched tracks: remove deleted, append new, init if empty
+  useEffect(() => {
+    if (tracks.length === 0) return;
+    const incomingIds = tracks.map((t) => t.id);
     setOrderedIds((prev) => {
-      if (prev.length === 0) return tracks.map((t) => t.id);
-      const kept = prev.filter((id) => trackIds.has(id));
-      const newIds = tracks.map((t) => t.id).filter((id) => !prev.includes(id));
+      if (prev.length === 0) return incomingIds;
+      const trackSet = new Set(incomingIds);
+      const kept = prev.filter((tid) => trackSet.has(tid));
+      const newIds = incomingIds.filter((tid) => !prev.includes(tid));
       return [...kept, ...newIds];
     });
   }, [tracks]);
@@ -162,14 +197,10 @@ export default function ProjectPage() {
     if (res.ok) router.push('/');
   };
 
-  const tracksById = useMemo(() => {
-    const map: Record<string, Track> = {};
-    tracks.forEach((t) => { map[t.id] = t; });
-    return map;
-  }, [tracks]);
+  const byId = useMemo(() => new Map(tracks.map((t) => [t.id, t])), [tracks]);
   const orderedTracks = useMemo(
-    () => orderedIds.map((tid) => tracksById[tid]).filter(Boolean) as Track[],
-    [orderedIds, tracksById]
+    () => orderedIds.map((tid) => byId.get(tid)).filter(Boolean) as Track[],
+    [orderedIds, byId]
   );
 
   const handleDragEnd = (event: DragEndEvent) => {
