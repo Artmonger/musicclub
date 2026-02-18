@@ -51,7 +51,7 @@ export default function ProjectPage() {
   /** Fetches tracks from API, updates state, returns the list. Supabase GET is the single source of truth; state is always set from the response. */
   const fetchTracks = useCallback(async (): Promise<Track[]> => {
     if (!id) return [];
-    const url = `/api/projects/${id}/tracks?t=${Date.now()}`;
+    const url = `/api/projects/${id}/tracks?t=${Date.now()}&_=${Math.random().toString(36).slice(2)}`;
     const res = await fetch(url, {
       cache: 'no-store',
       headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
@@ -78,22 +78,17 @@ export default function ProjectPage() {
     return [];
   }, [id]);
 
-  /** Hard refresh: clear in-memory state and re-fetch project + tracks from Supabase only. */
+  /** Hard refresh: clear in-memory state and re-fetch project + tracks from Supabase only. No retry on empty — avoids a delayed cached response overwriting correct []. */
   const loadFromBackend = useCallback(() => {
     setTracks([]);
     setError(null);
     setLoading(true);
-    Promise.all([fetchProject(), fetchTracks()])
-      .then(([, list]) => {
-        if (list.length === 0) {
-          setTimeout(() => fetchTracks(), 2000);
-        }
-      })
-      .finally(() => setLoading(false));
+    Promise.all([fetchProject(), fetchTracks()]).finally(() => setLoading(false));
   }, [fetchProject, fetchTracks]);
 
   useEffect(() => {
     if (!id) return;
+    setTracks([]);
     loadFromBackend();
   }, [id, loadFromBackend]);
 
@@ -102,11 +97,16 @@ export default function ProjectPage() {
     const onVisible = () => {
       if (document.visibilityState === 'visible') loadFromBackend();
     };
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) loadFromBackend();
+    };
     window.addEventListener('focus', onFocus);
     document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('pageshow', onPageShow);
     return () => {
       window.removeEventListener('focus', onFocus);
       document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('pageshow', onPageShow);
     };
   }, [loadFromBackend]);
 
