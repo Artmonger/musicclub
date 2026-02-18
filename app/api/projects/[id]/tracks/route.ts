@@ -60,7 +60,7 @@ export async function GET(
 
     if (rpcError) throw rpcError;
     const rows = (Array.isArray(rpcRows) ? rpcRows : []) as Record<string, unknown>[];
-    const total = tracksTotal ?? 0;
+    const tableTotal = tracksTotal ?? 0;
     const recentProjectIds = (recentRows ?? []).map((r: { project_id?: string }) => r?.project_id ?? '').filter(Boolean);
     const recentProjectIdsHeader = recentProjectIds.slice(0, 3).join(',');
 
@@ -79,7 +79,8 @@ export async function GET(
       'Vercel-CDN-Cache-Control': 'no-store',
       'X-Project-Id': projectId,
       'X-Track-Count': String(normalized.length),
-      'X-Tracks-Total': String(total),
+      'X-Tracks-Total': String(normalized.length),
+      'X-Tracks-Table-Total': String(tableTotal),
       'X-Recent-Project-Ids': recentProjectIdsHeader,
       'X-Supabase-Host': host ?? '',
     };
