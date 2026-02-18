@@ -5,10 +5,6 @@ export const dynamic = 'force-dynamic';
 
 const BUCKET = 'music-files';
 
-/**
- * Normalize storage path to object path only: projectId/filename (no full URL, no bucket prefix).
- * Returns null if path cannot be normalized.
- */
 function normalizeStreamPath(raw: string): string | null {
   let path = raw.trim();
   if (!path || path === 'undefined') return null;
@@ -32,14 +28,22 @@ function normalizeStreamPath(raw: string): string | null {
   return path;
 }
 
-/**
- * Stream: redirect to a short-lived signed URL. Browser should ONLY request /api/stream?path=<storagePath>.
- * path must be object path only: projectId/filename (never full URL, never music-files/ prefix).
- */
+/** Content-Type from file extension in path (for iOS Safari). */
+function contentTypeFromPath(path: string): string {
+  const ext = path.split('.').pop()?.toLowerCase() ?? '';
+  if (ext === 'mp3') return 'audio/mpeg';
+  if (ext === 'wav') return 'audio/wav';
+  if (ext === 'm4a') return 'audio/mp4';
+  return 'application/octet-stream';
+}
+
 function safeFilename(name: string): string {
   const base = name.replace(/[^\w.\-]/g, '_').slice(0, 200) || 'audio';
   return base.endsWith('.mp3') || base.endsWith('.wav') || base.endsWith('.m4a') ? base : `${base}.mp3`;
 }
+
+const CACHE_NO_STORE = 'no-store, no-cache, max-age=0, must-revalidate';
+const CORS_ORIGIN = '*';
 
 export async function GET(request: Request) {
   try {
@@ -56,9 +60,11 @@ export async function GET(request: Request) {
             ? 'path must be object path only (e.g. projectId/filename.ext). Do not send full URL or music-files/ prefix.'
             : 'path query parameter is required',
         },
-        { status: 400 }
+        { status: 400, headers: { 'Cache-Control': CACHE_NO_STORE, 'Access-Control-Allow-Origin': CORS_ORIGIN } }
       );
     }
+
+    const contentType = contentTypeFromPath(path);
 
     let supabase;
     try {
@@ -68,7 +74,7 @@ export async function GET(request: Request) {
       console.error('Stream (env):', msg);
       return NextResponse.json(
         { error: msg + '. Set SUPABASE_URL and SUPABASE_SECRET_KEY in Vercel.' },
-        { status: 503 }
+        { status: 503, headers: { 'Cache-Control': CACHE_NO_STORE, 'Access-Control-Allow-Origin': CORS_ORIGIN } }
       );
     }
 
@@ -78,7 +84,10 @@ export async function GET(request: Request) {
 
     if (error) throw error;
     if (!data?.signedUrl) {
-      return NextResponse.json({ error: 'Could not create signed URL' }, { status: 404 });
+      return NextResponse.json(
+        { error: 'Not found' },
+        { status: 404, headers: { 'Cache-Control': CACHE_NO_STORE, 'Access-Control-Allow-Origin': CORS_ORIGIN } }
+      );
     }
 
     const signedUrl = data.signedUrl;
@@ -92,6 +101,12 @@ export async function GET(request: Request) {
 
     if (isDownload) {
       const res = await fetch(signedUrl);
+      if (res.status === 404) {
+        return NextResponse.json(
+          { error: 'Not found' },
+          { status: 404, headers: { 'Cache-Control': CACHE_NO_STORE, 'Access-Control-Allow-Origin': CORS_ORIGIN } }
+        );
+      }
       if (!res.ok) {
         return NextResponse.json({ error: 'Failed to fetch file for download' }, { status: 502 });
       }
@@ -100,35 +115,59 @@ export async function GET(request: Request) {
       return new NextResponse(res.body, {
         headers: {
           'Content-Disposition': `attachment; filename="${filename}"`,
-          'Content-Type': res.headers.get('content-type') || 'application/octet-stream',
-          'Cache-Control': 'no-store, no-cache, max-age=0, must-revalidate',
+          'Content-Type': contentType,
+          'Cache-Control': CACHE_NO_STORE,
+          'Access-Control-Allow-Origin': CORS_ORIGIN,
         },
       });
     }
 
-    // Stream with Range support for mobile Safari (206 Partial Content)
+    // Stream with full Range support for iOS Safari
     const rangeHeader = request.headers.get('range') ?? '';
     const hasRange = /^bytes=/.test(rangeHeader);
     const fetchHeaders: HeadersInit = {};
     if (hasRange) fetchHeaders['Range'] = rangeHeader;
 
     const upstream = await fetch(signedUrl, { headers: fetchHeaders });
-    if (!upstream.ok && upstream.status !== 206) {
-      console.error('[stream] upstream error path=%s status=%s', path, upstream.status);
-      return NextResponse.json({ error: 'Failed to stream file' }, { status: 502 });
+
+    if (upstream.status === 404) {
+      return NextResponse.json(
+        { error: 'Not found' },
+        { status: 404, headers: { 'Cache-Control': CACHE_NO_STORE, 'Access-Control-Allow-Origin': CORS_ORIGIN } }
+      );
     }
 
-    const contentType = upstream.headers.get('content-type') || 'application/octet-stream';
+    if (upstream.status === 416) {
+      const upstreamRange = upstream.headers.get('content-range');
+      const headers: Record<string, string> = {
+        'Accept-Ranges': 'bytes',
+        'Content-Range': upstreamRange ?? `bytes */0`,
+        'Content-Type': contentType,
+        'Cache-Control': CACHE_NO_STORE,
+        'Access-Control-Allow-Origin': CORS_ORIGIN,
+      };
+      return new NextResponse(null, { status: 416, headers });
+    }
+
+    if (!upstream.ok && upstream.status !== 206) {
+      console.error('[stream] upstream error path=%s status=%s', path, upstream.status);
+      return NextResponse.json(
+        { error: 'Failed to stream file' },
+        { status: 502, headers: { 'Cache-Control': CACHE_NO_STORE, 'Access-Control-Allow-Origin': CORS_ORIGIN } }
+      );
+    }
+
     const contentRange = upstream.headers.get('content-range');
     const contentLength = upstream.headers.get('content-length');
     const status = upstream.status;
-    console.log('[stream] path=%s hasRange=%s upstreamStatus=%s contentRange=%s contentLength=%s contentType=%s',
-      path, hasRange, status, contentRange ?? '(none)', contentLength ?? '(none)', contentType);
+    console.log('[stream] path=%s hasRange=%s status=%s contentRange=%s contentLength=%s',
+      path, hasRange, status, contentRange ?? '(none)', contentLength ?? '(none)');
 
     const headers: Record<string, string> = {
       'Accept-Ranges': 'bytes',
       'Content-Type': contentType,
-      'Cache-Control': 'no-store, no-cache, max-age=0, must-revalidate',
+      'Cache-Control': CACHE_NO_STORE,
+      'Access-Control-Allow-Origin': CORS_ORIGIN,
     };
     if (contentRange) headers['Content-Range'] = contentRange;
     if (contentLength) headers['Content-Length'] = contentLength;
@@ -138,7 +177,7 @@ export async function GET(request: Request) {
     console.error('Stream signed URL:', err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Failed to get stream URL' },
-      { status: 500 }
+      { status: 500, headers: { 'Cache-Control': CACHE_NO_STORE, 'Access-Control-Allow-Origin': CORS_ORIGIN } }
     );
   }
 }
