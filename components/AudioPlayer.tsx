@@ -207,10 +207,25 @@ export function AudioPlayer({ streamUrlApi, trackName, onEnded, className = '' }
           onLoadStart={() => setLoading(true)}
           onCanPlay={() => setLoading(false)}
           onLoadedData={() => setLoading(false)}
-          onError={() => {
+          onError={async () => {
             setLoading(false);
             const code = audioRef.current?.error?.code;
-            setError(code != null ? `Error ${code}. Tap play again.` : 'Failed to load audio. Tap play again.');
+            let message: string;
+            try {
+              const res = await fetch(streamUrlApi, { method: 'GET', redirect: 'manual' });
+              const headStatus = res.headers.get('X-Stream-Head-Status') ?? '';
+              const headType = res.headers.get('X-Stream-Head-Type') ?? '';
+              if (headStatus === '404' || headStatus === '400') {
+                message = 'File missing. This track\'s DB path doesn\'t match an object in storage (404/400). Try re-uploading the track.';
+              } else if ((headStatus === '200' || headStatus === '206') && headType && !/^audio\//i.test(headType)) {
+                message = `Stream returned non-audio content-type: ${headType}`;
+              } else {
+                message = code != null ? `Error ${code}. Tap play again.` : 'Failed to load audio. Tap play again.';
+              }
+            } catch {
+              message = code != null ? `Error ${code}. Tap play again.` : 'Failed to load audio. Tap play again.';
+            }
+            setError(message);
           }}
         />
       )}

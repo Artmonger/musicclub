@@ -12,6 +12,17 @@ function sanitize(name: string): string {
   return name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 200) || 'audio';
 }
 
+/** Infer audio Content-Type from filename when client sends empty/generic (e.g. iOS). */
+function inferContentTypeFromFilename(filename: string): string {
+  const ext = filename.split('.').pop()?.toLowerCase() ?? '';
+  const byExt: Record<string, string> = {
+    mp3: 'audio/mpeg',
+    wav: 'audio/wav',
+    m4a: 'audio/mp4',
+  };
+  return byExt[ext] ?? 'application/octet-stream';
+}
+
 /**
  * POST /api/uploads/create
  * Body: { projectId, filename, contentType }
@@ -27,7 +38,12 @@ export async function POST(request: Request) {
     if (!filename || typeof filename !== 'string') {
       return NextResponse.json({ error: 'filename is required' }, { status: 400 });
     }
-    const ct = (typeof contentType === 'string' ? contentType.trim() : '') || 'audio/mpeg';
+    let ct = (typeof contentType === 'string' ? contentType.trim() : '') || '';
+    if (!ct || ct === 'application/octet-stream') {
+      ct = inferContentTypeFromFilename(filename);
+      console.log('[upload] inferred contentType=%s filename=%s', ct, filename);
+    }
+    if (!ct) ct = 'audio/mpeg';
     if (!ALLOWED.includes(ct) && !ALLOWED.includes(ct.toLowerCase())) {
       return NextResponse.json({ error: 'Invalid contentType. Allowed: mp3, wav, m4a' }, { status: 400 });
     }

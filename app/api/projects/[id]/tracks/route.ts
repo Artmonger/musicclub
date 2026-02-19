@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createServerSupabase } from '@/lib/supabase-server';
+import { normalizeStoragePath } from '@/lib/normalizeStoragePath';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -54,18 +55,43 @@ export async function GET(
     }
 
     const rows = Array.isArray(data) ? data : [];
-    const normalized = rows.map((row: Record<string, unknown>) => ({
-      ...row,
-      name: row.title ?? row.name,
-      storage_path: row.file_path ?? row.storage_path,
-      file_path: row.file_path ?? row.storage_path,
-    }));
+    const updates: { id: string; file_path: string; oldPath: string }[] = [];
+    const rawSamples: string[] = [];
+    const fixedRows = rows.map((row: Record<string, unknown>) => {
+      const rawPath = (row.file_path ?? row.storage_path) as string | null | undefined;
+      if (rawPath && rawSamples.length < 3) rawSamples.push(String(rawPath).slice(0, 100));
+      const fixed = rawPath ? normalizeStoragePath(rawPath) : null;
+      const currentPath = rawPath ?? null;
+      if (fixed && fixed !== currentPath) {
+        const id = row.id as string;
+        if (id) updates.push({ id, file_path: fixed, oldPath: String(currentPath ?? '') });
+      }
+      const file_path = fixed ?? currentPath ?? (row.file_path ?? row.storage_path);
+      return {
+        ...row,
+        name: row.title ?? row.name,
+        storage_path: file_path,
+        file_path,
+      };
+    });
 
-    return NextResponse.json(normalized, {
+    for (const u of updates) {
+      await supabase.from('tracks').update({ file_path: u.file_path }).eq('id', u.id);
+    }
+
+    const example =
+      updates.length > 0
+        ? `${updates[0].oldPath.slice(0, 60)} -> ${updates[0].file_path.slice(0, 60)}`
+        : '';
+
+    return NextResponse.json(fixedRows, {
       headers: {
         ...NO_STORE_HEADERS,
         'X-Project-Id': projectId,
-        'X-Track-Count': String(normalized.length),
+        'X-Track-Count': String(fixedRows.length),
+        'X-Paths-Fixed': String(updates.length),
+        'X-Paths-Example': example,
+        'X-Paths-Sample': rawSamples.join(' | '),
       },
     });
   } catch (err) {

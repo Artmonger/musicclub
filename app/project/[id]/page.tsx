@@ -19,6 +19,19 @@ import type { Track } from '@/types/database';
 
 const ORDER_KEY = (projectId: string) => `trackOrder:${projectId}`;
 
+/** Infer audio Content-Type from filename when file.type is missing/unknown (e.g. iOS). */
+function inferContentType(filename: string, fileType: string): string {
+  const ext = filename.split('.').pop()?.toLowerCase() ?? '';
+  const byExt: Record<string, string> = {
+    mp3: 'audio/mpeg',
+    wav: 'audio/wav',
+    m4a: 'audio/mp4',
+  };
+  if (byExt[ext]) return byExt[ext];
+  if (fileType && fileType !== 'application/octet-stream') return fileType;
+  return 'application/octet-stream';
+}
+
 function loadOrderFromStorage(projectId: string): string[] {
   try {
     const raw = localStorage.getItem(ORDER_KEY(projectId));
@@ -127,13 +140,16 @@ export default function ProjectPage() {
     setUploading(true);
     try {
       for (const file of files) {
+        const contentType = inferContentType(file.name, file.type || '');
+        console.log('[upload] inferred contentType=%s filename=%s', contentType, file.name);
+
         const createRes = await fetch('/api/uploads/create', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             projectId: id,
             filename: file.name,
-            contentType: file.type || 'application/octet-stream',
+            contentType,
           }),
           cache: 'no-store',
         });
@@ -144,7 +160,7 @@ export default function ProjectPage() {
 
         const putRes = await fetch(signedUrl, {
           method: 'PUT',
-          headers: { 'Content-Type': file.type || 'application/octet-stream' },
+          headers: { 'Content-Type': contentType },
           body: file,
         });
         if (!putRes.ok) throw new Error('Upload to storage failed');
@@ -218,7 +234,7 @@ export default function ProjectPage() {
     return (
       <div className="mx-auto max-w-2xl px-4 py-12">
         <p className="text-red-400">Invalid project URL.</p>
-        <Link href="/" className="mt-4 inline-block text-sm text-[var(--muted)] hover:underline">← Projects</Link>
+        <Link href="/" className="mt-4 inline-block text-sm text-[var(--muted)] hover:underline">← Artists</Link>
       </div>
     );
   }
@@ -239,14 +255,16 @@ export default function ProjectPage() {
     return (
       <div className="mx-auto max-w-2xl px-4 py-12">
         <p className="text-red-400">{error || 'Project not found'}</p>
-        <Link href="/" className="mt-4 inline-block text-sm text-[var(--muted)] hover:underline">← Projects</Link>
+        <Link href="/" className="mt-4 inline-block text-sm text-[var(--muted)] hover:underline">← Artists</Link>
       </div>
     );
   }
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-12" data-page="project">
-      <Link href="/" className="text-sm text-[var(--muted)] hover:underline">← Projects</Link>
+      <Link href={project.artist_id ? `/artist/${project.artist_id}` : '/'} className="text-sm text-[var(--muted)] hover:underline">
+        ← {project.artist_id ? 'Artist' : 'Artists'}
+      </Link>
       <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">{project.name}</h1>
