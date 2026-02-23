@@ -58,6 +58,7 @@ export default function ProjectPage() {
   const id = (params?.id && String(params.id).trim()) || '';
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [loadKey] = useState(() => Date.now()); // Fresh per page load → new signed URLs
   const [project, setProject] = useState<Project | null>(null);
   const [tracks, setTracks] = useState<Track[]>([]);
   const [orderedIds, setOrderedIds] = useState<string[]>([]);
@@ -157,7 +158,7 @@ export default function ProjectPage() {
         if (!createRes.ok) throw new Error((createData.error as string) || 'Failed to create upload URL');
         const { path, signedUrl } = createData as { path: string; signedUrl: string };
         if (!path || !signedUrl) throw new Error('Invalid upload URL');
-
+        // NEVER store signedUrl in DB — it expires. Persist only object path (path).
         const putRes = await fetch(signedUrl, {
           method: 'PUT',
           headers: { 'Content-Type': contentType },
@@ -171,7 +172,7 @@ export default function ProjectPage() {
           body: JSON.stringify({
             projectId: id,
             title: file.name.replace(/\.[^.]+$/, '') || 'Untitled',
-            file_path: path,
+            file_path: path, // object path only, never signed URL
           }),
           cache: 'no-store',
         });
@@ -199,6 +200,16 @@ export default function ProjectPage() {
       await reloadTracks();
       setEditingTrackId(null);
     }
+  };
+
+  const updateTrackNotes = async (trackId: string, notes: string) => {
+    const res = await fetch('/api/tracks', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: trackId, notes }),
+      cache: 'no-store',
+    });
+    if (res.ok) await reloadTracks();
   };
 
   const deleteTrack = async (trackId: string) => {
@@ -301,9 +312,11 @@ export default function ProjectPage() {
                 <SortableTrackRow
                   key={track.id}
                   track={track}
+                  loadKey={loadKey}
                   editingTrackId={editingTrackId}
                   setEditingTrackId={setEditingTrackId}
                   onUpdateName={updateTrackName}
+                  onUpdateNotes={updateTrackNotes}
                   onDelete={deleteTrack}
                 />
               ))}

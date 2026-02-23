@@ -1,15 +1,28 @@
 'use client';
 
+import { useMemo, useState } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { AudioPlayer } from '@/components/AudioPlayer';
 import type { Track } from '@/types/database';
 
+/** Object path only (never signed URL). Used for stream + download. */
+function objectPath(track: Track): string {
+  return track.file_path ?? (track as { storage_path?: string }).storage_path ?? '';
+}
+
+function extensionFromPath(path: string): string {
+  const ext = path.split('.').pop()?.toLowerCase();
+  return ext === 'mp3' || ext === 'wav' || ext === 'm4a' ? `.${ext}` : '.m4a';
+}
+
 interface SortableTrackRowProps {
   track: Track;
+  loadKey?: number; // Changes on each page load → fresh signed URL
   editingTrackId: string | null;
   setEditingTrackId: (id: string | null) => void;
   onUpdateName: (trackId: string, name: string) => void;
+  onUpdateNotes: (trackId: string, notes: string) => void;
   onDelete: (trackId: string) => void;
 }
 
@@ -28,11 +41,14 @@ function DragHandleIcon() {
 
 export function SortableTrackRow({
   track,
+  loadKey,
   editingTrackId,
   setEditingTrackId,
   onUpdateName,
+  onUpdateNotes,
   onDelete,
 }: SortableTrackRowProps) {
+  const [notesExpanded, setNotesExpanded] = useState(false);
   const {
     attributes,
     listeners,
@@ -47,9 +63,14 @@ export function SortableTrackRow({
     transition,
   };
 
-  const streamPath = track.file_path ?? (track as { storage_path?: string }).storage_path ?? '';
+  const objectPathVal = objectPath(track);
   const displayName = track.title ?? (track as { name?: string }).name ?? 'Track';
-  const hasValidPath = streamPath.length > 2;
+  const hasValidPath = objectPathVal.length > 2;
+
+  const streamUrlApi = useMemo(
+    () => `/api/stream?id=${encodeURIComponent(track.id)}&load=${loadKey ?? Date.now()}`,
+    [track.id, loadKey]
+  );
 
   return (
     <li
@@ -100,7 +121,7 @@ export function SortableTrackRow({
         <div className="flex shrink-0 items-center gap-2">
           {hasValidPath && (
             <a
-              href={`/api/download?path=${encodeURIComponent(streamPath)}`}
+              href={`/api/stream?id=${encodeURIComponent(track.id)}&download=1&filename=${encodeURIComponent(displayName)}${extensionFromPath(objectPathVal)}`}
               download
               className="text-xs text-[var(--muted)] hover:underline"
             >
@@ -118,12 +139,43 @@ export function SortableTrackRow({
       </div>
       {hasValidPath ? (
         <AudioPlayer
-          streamUrlApi={`/api/stream?path=${encodeURIComponent(streamPath)}`}
+          streamUrlApi={streamUrlApi}
           trackName={displayName}
         />
       ) : (
         <p className="text-sm text-amber-500">File path missing.</p>
       )}
+
+      <div className="mt-3 border-t border-[var(--border)] pt-2">
+        <button
+          type="button"
+          onClick={() => setNotesExpanded((prev) => !prev)}
+          className="flex w-full items-center gap-2 text-left text-sm text-[var(--muted)] hover:text-[var(--text)]"
+          aria-expanded={notesExpanded}
+        >
+          <svg
+            className={`h-4 w-4 shrink-0 transition-transform ${notesExpanded ? 'rotate-90' : ''}`}
+            fill="currentColor"
+            viewBox="0 0 24 24"
+            aria-hidden
+          >
+            <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
+          </svg>
+          Notes
+        </button>
+        {notesExpanded && (
+          <textarea
+            defaultValue={track.notes ?? ''}
+            onBlur={(e) => {
+              const v = e.target.value;
+              if (v !== (track.notes ?? '')) onUpdateNotes(track.id, v);
+            }}
+            placeholder="Add notes…"
+            rows={6}
+            className="mt-2 w-full resize-y rounded border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm focus:border-[var(--muted)] focus:outline-none"
+          />
+        )}
+      </div>
     </li>
   );
 }
