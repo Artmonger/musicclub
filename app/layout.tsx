@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { dmSans, spectral } from './fonts';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -12,8 +13,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body className="min-h-screen bg-[var(--bg)] text-[var(--text)] antialiased">
+    <html lang="en" className={`${dmSans.variable} ${spectral.variable}`}>
+      <body className="min-h-screen bg-[var(--bg)] text-[var(--text)] font-sans antialiased">
         {children}
       </body>
     </html>

@@ -7,6 +7,10 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ['var(--font-dm-sans)', 'system-ui', 'sans-serif'],
+        serif: ['var(--font-spectral)', 'Georgia', 'serif'],
+      },
       colors: {
         bg: 'var(--bg)',
         surface: 'var(--surface)',
