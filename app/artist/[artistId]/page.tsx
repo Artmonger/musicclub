@@ -1,16 +1,49 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
+import {
+  DndContext,
+  closestCenter,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  arrayMove,
+} from '@dnd-kit/sortable';
+import { SortableProjectRow } from '@/components/SortableProjectRow';
 import type { Artist } from '@/types/database';
 import type { Project } from '@/types/database';
+
+const PROJECT_ORDER_KEY = (artistId: string) => `projectOrder:${artistId}`;
+
+function loadProjectOrder(artistId: string): string[] {
+  try {
+    const raw = localStorage.getItem(PROJECT_ORDER_KEY(artistId));
+    const saved = raw ? JSON.parse(raw) : [];
+    if (Array.isArray(saved) && saved.every((x) => typeof x === 'string')) return saved;
+  } catch {
+    /* localStorage unavailable or invalid */
+  }
+  return [];
+}
+
+function saveProjectOrder(artistId: string, orderedIds: string[]) {
+  try {
+    localStorage.setItem(PROJECT_ORDER_KEY(artistId), JSON.stringify(orderedIds));
+  } catch {
+    /* ignore */
+  }
+}
 
 export default function ArtistPage() {
   const params = useParams();
   const artistId = (params?.artistId && String(params.artistId).trim()) || '';
   const [artist, setArtist] = useState<Artist | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [orderedIds, setOrderedIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
@@ -38,8 +71,28 @@ export default function ArtistPage() {
   };
 
   useEffect(() => {
+    if (artistId) setOrderedIds(loadProjectOrder(artistId));
+  }, [artistId]);
+
+  useEffect(() => {
     loadAll();
   }, [artistId]);
+
+  useEffect(() => {
+    if (artistId) saveProjectOrder(artistId, orderedIds);
+  }, [artistId, orderedIds]);
+
+  useEffect(() => {
+    if (projects.length === 0) return;
+    const incomingIds = projects.map((p) => p.id);
+    setOrderedIds((prev) => {
+      if (prev.length === 0) return incomingIds;
+      const projectSet = new Set(incomingIds);
+      const kept = prev.filter((id) => projectSet.has(id));
+      const newIds = incomingIds.filter((id) => !prev.includes(id));
+      return [...kept, ...newIds];
+    });
+  }, [projects]);
 
   const createProject = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -91,6 +144,23 @@ export default function ArtistPage() {
     }
   };
 
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      const oldIndex = orderedIds.indexOf(active.id as string);
+      const newIndex = orderedIds.indexOf(over.id as string);
+      if (oldIndex !== -1 && newIndex !== -1) {
+        setOrderedIds(arrayMove(orderedIds, oldIndex, newIndex));
+      }
+    }
+  };
+
+  const byId = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
+  const orderedProjects = useMemo(
+    () => orderedIds.map((id) => byId.get(id)).filter(Boolean) as Project[],
+    [orderedIds, byId]
+  );
+
   const deleteArtist = async () => {
     if (!confirm('Delete this artist and all their projects and tracks? This cannot be undone.')) return;
     const res = await fetch(`/api/artists?id=${encodeURIComponent(artistId)}`, { method: 'DELETE', cache: 'no-store' });
@@ -103,19 +173,19 @@ export default function ArtistPage() {
     return (
       <div className="mx-auto max-w-2xl px-4 py-12">
         <p className="text-sm text-[var(--muted)]">Invalid artist.</p>
-        <Link href="/" className="mt-2 inline-block text-sm text-[var(--accent)] hover:underline">
-          ← Artists
-        </Link>
       </div>
     );
   }
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-12">
-      <Link href="/" className="text-sm text-[var(--muted)] hover:underline">
-        ← Artists
+      <Link
+        href="/"
+        className="mb-4 inline-block text-sm text-[var(--muted)] hover:underline"
+      >
+        ← Back to Classroom
       </Link>
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         {editingName ? (
           <div className="flex flex-1 items-center gap-2">
             <input
@@ -169,25 +239,13 @@ export default function ArtistPage() {
         ) : projects.length === 0 ? (
           <li className="py-8 text-sm text-[var(--muted)]">No projects yet. Create one above.</li>
         ) : (
-          projects.map((p) => (
-            <li key={p.id} className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-4">
-              <div className="flex items-center justify-between gap-2">
-                <Link
-                  href={`/project/${p.id}`}
-                  className="min-w-0 flex-1 font-medium transition hover:underline"
-                >
-                  {p.name}
-                </Link>
-                <button
-                  type="button"
-                  onClick={() => deleteProject(p.id)}
-                  className="shrink-0 text-xs text-[var(--muted)] hover:text-red-400 hover:underline"
-                >
-                  Delete
-                </button>
-              </div>
-            </li>
-          ))
+          <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={orderedIds} strategy={verticalListSortingStrategy}>
+              {orderedProjects.map((p) => (
+                <SortableProjectRow key={p.id} project={p} onDelete={deleteProject} />
+              ))}
+            </SortableContext>
+          </DndContext>
         )}
       </ul>
     </div>
