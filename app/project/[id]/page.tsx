@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useMemo } from 'react';
 import Link from 'next/link';
+import * as tus from 'tus-js-client';
 import { useParams, useRouter } from 'next/navigation';
 import {
   DndContext,
@@ -18,6 +19,7 @@ import type { Project } from '@/types/database';
 import type { Track } from '@/types/database';
 
 const ORDER_KEY = (projectId: string) => `trackOrder:${projectId}`;
+const LARGE_FILE_THRESHOLD = 6 * 1024 * 1024; // 6MB — use TUS resumable for larger
 
 /** Infer audio Content-Type from filename when file.type is missing/unknown (e.g. iOS). */
 function inferContentType(filename: string, fileType: string): string {
@@ -133,6 +135,72 @@ export default function ProjectPage() {
     if (id) loadAll();
   }, [id]);
 
+  async function uploadFile(file: File, path: string, projectId: string, contentType: string) {
+    const postRes = await fetch('/api/tracks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        projectId,
+        title: file.name.replace(/\.[^.]+$/, '') || 'Untitled',
+        file_path: path,
+      }),
+      cache: 'no-store',
+    });
+    const postData = await postRes.json().catch(() => ({}));
+    if (!postRes.ok) throw new Error((postData.error as string) || 'Failed to save track');
+    await reloadTracks();
+  }
+
+  function doPutUpload(
+    file: File,
+    signedUrl: string,
+    path: string,
+    projectId: string,
+    contentType: string
+  ): Promise<void> {
+    return fetch(signedUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': contentType },
+      body: file,
+    }).then((res) => {
+      if (!res.ok) throw new Error('Upload to storage failed');
+      return uploadFile(file, path, projectId, contentType);
+    });
+  }
+
+  function doTusUpload(
+    file: File,
+    path: string,
+    projectId: string,
+    contentType: string,
+    tusEndpoint: string,
+    token: string,
+    bucketName: string
+  ): Promise<void> {
+    const objectName = path;
+    return new Promise((resolve, reject) => {
+      const upload = new tus.Upload(file, {
+        endpoint: tusEndpoint,
+        retryDelays: [0, 3000, 5000, 10000, 20000],
+        headers: { 'x-signature': token },
+        metadata: {
+          bucketName,
+          objectName,
+          contentType,
+        },
+        uploadDataDuringCreation: true,
+        removeFingerprintOnSuccess: true,
+        chunkSize: 6 * 1024 * 1024,
+        onError: (err) => reject(err),
+        onSuccess: () => uploadFile(file, path, projectId, contentType).then(resolve).catch(reject),
+      });
+      upload.findPreviousUploads().then((previous) => {
+        if (previous.length) upload.resumeFromPreviousUpload(previous[0]);
+        upload.start();
+      });
+    });
+  }
+
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files ? Array.from(e.target.files) : [];
     e.target.value = '';
@@ -142,7 +210,7 @@ export default function ProjectPage() {
     try {
       for (const file of files) {
         const contentType = inferContentType(file.name, file.type || '');
-        console.log('[upload] inferred contentType=%s filename=%s', contentType, file.name);
+        console.log('[upload] inferred contentType=%s filename=%s size=%s', contentType, file.name, file.size);
 
         const createRes = await fetch('/api/uploads/create', {
           method: 'POST',
@@ -156,29 +224,16 @@ export default function ProjectPage() {
         });
         const createData = await createRes.json().catch(() => ({}));
         if (!createRes.ok) throw new Error((createData.error as string) || 'Failed to create upload URL');
-        const { path, signedUrl } = createData as { path: string; signedUrl: string };
-        if (!path || !signedUrl) throw new Error('Invalid upload URL');
-        // NEVER store signedUrl in DB — it expires. Persist only object path (path).
-        const putRes = await fetch(signedUrl, {
-          method: 'PUT',
-          headers: { 'Content-Type': contentType },
-          body: file,
-        });
-        if (!putRes.ok) throw new Error('Upload to storage failed');
+        const { path, signedUrl, token, tusEndpoint, bucketName } = createData;
+        if (!path) throw new Error('Invalid upload URL');
 
-        const postRes = await fetch('/api/tracks', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            projectId: id,
-            title: file.name.replace(/\.[^.]+$/, '') || 'Untitled',
-            file_path: path, // object path only, never signed URL
-          }),
-          cache: 'no-store',
-        });
-        const postData = await postRes.json().catch(() => ({}));
-        if (!postRes.ok) throw new Error((postData.error as string) || 'Failed to save track');
-        await reloadTracks();
+        const useTus = file.size > LARGE_FILE_THRESHOLD && tusEndpoint && token && bucketName;
+        if (useTus) {
+          await doTusUpload(file, path, id, contentType, tusEndpoint, token, bucketName);
+        } else {
+          if (!signedUrl) throw new Error('Invalid upload URL');
+          await doPutUpload(file, signedUrl, path, id, contentType);
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed');

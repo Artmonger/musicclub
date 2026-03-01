@@ -1,10 +1,18 @@
 import { NextResponse } from 'next/server';
-import { createServerSupabase } from '@/lib/supabase-server';
+import { createServerSupabase, getSupabaseHost } from '@/lib/supabase-server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const BUCKET = 'music-files';
+
+/** TUS resumable endpoint for large files. Use direct storage hostname for best performance. */
+function getTusEndpoint(): string | null {
+  const host = getSupabaseHost();
+  if (!host || !host.endsWith('.supabase.co')) return null;
+  const projectRef = host.split('.')[0];
+  return `https://${projectRef}.storage.supabase.co/storage/v1/upload/resumable`;
+}
 
 const ALLOWED = ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/mp4', 'audio/x-m4a', 'application/octet-stream', ''];
 
@@ -79,6 +87,9 @@ export async function POST(request: Request) {
       path: data?.path ?? path,
       signedUrl,
       token,
+      tusEndpoint: getTusEndpoint(),
+      bucketName: BUCKET,
+      contentType: ct,
     };
     console.log('[uploads/create] success', { projectId, filename, path: response.path });
 
