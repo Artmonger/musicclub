@@ -19,7 +19,7 @@ import type { Project } from '@/types/database';
 import type { Track } from '@/types/database';
 
 const ORDER_KEY = (projectId: string) => `trackOrder:${projectId}`;
-const LARGE_FILE_THRESHOLD = 6 * 1024 * 1024; // 6MB — use TUS resumable for larger (requires Pro for best limits)
+const LARGE_FILE_THRESHOLD = 100 * 1024 * 1024; // 100MB — use simple PUT; TUS /resumable/sign returns 413 for large declared sizes
 
 /** Infer audio Content-Type from filename when file.type is missing/unknown (e.g. iOS). */
 function inferContentType(filename: string, fileType: string): string {
