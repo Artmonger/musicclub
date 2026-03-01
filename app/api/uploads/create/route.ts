@@ -6,12 +6,16 @@ export const dynamic = 'force-dynamic';
 
 const BUCKET = 'music-files';
 
-/** TUS resumable endpoint for large files. Use direct storage hostname for best performance. */
+/** TUS resumable endpoint for large files. Use /resumable/sign for signed token flow. */
 function getTusEndpoint(): string | null {
-  const host = getSupabaseHost();
-  if (!host || !host.endsWith('.supabase.co')) return null;
-  const projectRef = host.split('.')[0];
-  return `https://${projectRef}.storage.supabase.co/storage/v1/upload/resumable`;
+  const url = process.env.SUPABASE_URL;
+  if (!url || typeof url !== 'string' || !url.trim()) return null;
+  try {
+    const base = url.replace(/\/$/, '');
+    return `${base}/storage/v1/upload/resumable/sign`;
+  } catch {
+    return null;
+  }
 }
 
 const ALLOWED = ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/mp4', 'audio/x-m4a', 'application/octet-stream', ''];
@@ -83,6 +87,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid response from storage' }, { status: 502 });
     }
 
+    const anonKey = process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     const response = {
       path: data?.path ?? path,
       signedUrl,
@@ -90,6 +95,7 @@ export async function POST(request: Request) {
       tusEndpoint: getTusEndpoint(),
       bucketName: BUCKET,
       contentType: ct,
+      anonKey: typeof anonKey === 'string' && anonKey.trim() ? anonKey.trim() : undefined,
     };
     console.log('[uploads/create] success', { projectId, filename, path: response.path });
 

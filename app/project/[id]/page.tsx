@@ -175,14 +175,17 @@ export default function ProjectPage() {
     contentType: string,
     tusEndpoint: string,
     token: string,
-    bucketName: string
+    bucketName: string,
+    anonKey?: string
   ): Promise<void> {
     const objectName = path;
+    const headers: Record<string, string> = { 'x-signature': token };
+    if (anonKey) headers['apikey'] = anonKey;
     return new Promise((resolve, reject) => {
       const upload = new tus.Upload(file, {
         endpoint: tusEndpoint,
         retryDelays: [0, 3000, 5000, 10000, 20000],
-        headers: { 'x-signature': token },
+        headers,
         metadata: {
           bucketName,
           objectName,
@@ -224,12 +227,12 @@ export default function ProjectPage() {
         });
         const createData = await createRes.json().catch(() => ({}));
         if (!createRes.ok) throw new Error((createData.error as string) || 'Failed to create upload URL');
-        const { path, signedUrl, token, tusEndpoint, bucketName } = createData;
+        const { path, signedUrl, token, tusEndpoint, bucketName, anonKey } = createData;
         if (!path) throw new Error('Invalid upload URL');
 
         const useTus = file.size > LARGE_FILE_THRESHOLD && tusEndpoint && token && bucketName;
         if (useTus) {
-          await doTusUpload(file, path, id, contentType, tusEndpoint, token, bucketName);
+          await doTusUpload(file, path, id, contentType, tusEndpoint, token, bucketName, anonKey);
         } else {
           if (!signedUrl) throw new Error('Invalid upload URL');
           await doPutUpload(file, signedUrl, path, id, contentType);
