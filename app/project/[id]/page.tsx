@@ -191,7 +191,7 @@ export default function ProjectPage() {
           objectName,
           contentType,
         },
-        uploadDataDuringCreation: true,
+        uploadDataDuringCreation: false,
         removeFingerprintOnSuccess: true,
         chunkSize: 6 * 1024 * 1024,
         onError: (err) => reject(err),
